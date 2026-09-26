@@ -1,0 +1,16 @@
+# Build output (bin/ and obj/ sit in this folder; CTP_Dev is never scanned by the game).
+bin/
+obj/
+
+# Only README.md is published with the source.
+*.md
+!README.md
+
+# IDE / editor
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.swp
+.DS_Store

@@ -5,7 +5,7 @@ namespace ZTX.BioCirculation
 {
     public static class Log
     {
-        public const string VERSION = "ZTX.BioCirculation v1.0.0";
+        public const string VERSION = "ZTX.BioCirculation v1.0.1";
         private const string P = "[ZTX.Bio] ";
         public static void Info(string m)  => Logger.Log(P + m);
 

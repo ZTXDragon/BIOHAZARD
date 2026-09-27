@@ -739,15 +739,17 @@ namespace ZTX.BioCirculation.Game
             }
         }
 
+        private readonly List<Vector2> _workPoints = new List<Vector2>();
+
         private int TickCarry(ZtxHauler h, float seconds)
         {
             if (!h.CanCarry) return 0;
             if (!h.IsUsable)
             {
-                // No tick moves the tips while the organ is unusable, so a Homing flag left set
+                // No tick moves the tips while the organ is unusable, so a Homing or Holding flag left set
                 // would hold the drawn arm on a frozen tip. Drop it: the arm goes back to idle.
                 ArmTipSlot[] idle = h.Slots;
-                for (int i = 0; i < idle.Length; i++) idle[i].Homing = false;
+                for (int i = 0; i < idle.Length; i++) { idle[i].Homing = false; idle[i].Holding = false; }
                 return 0;
             }
             Ship ship = base.Ship;
@@ -764,6 +766,20 @@ namespace ZTX.BioCirculation.Game
             float grab = h.Rules.GrabSpeed.GetValue(self, 1f);
             if (grab <= 0f) grab = 8f;
             float carrySpeed = h.Rules.CarrySpeed.GetValue(self, 1f);
+
+            _workPoints.Clear();
+            Part workSalvage = h.SalvageClaim?.SalvagePart;
+            if (workSalvage != null && !workSalvage.IsDestroyed && workSalvage.Ship != null)
+                _workPoints.Add(workSalvage.Ship.DetTransformPointToWorld(workSalvage.LocalCenter));
+            Part workBuild = h.BuildClaim;
+            if (workBuild != null && workBuild.IsUnderConstruction && ReferenceEquals(workBuild.Ship, ship))
+                _workPoints.Add(ship.DetTransformPointToWorld(workBuild.LocalCenter));
+            Part workRepair = h.RepairClaim;
+            if (workRepair != null && !workRepair.IsDestroyed && ReferenceEquals(workRepair.Ship, ship))
+                _workPoints.Add(ship.DetTransformPointToWorld(workRepair.LocalCenter));
+            Part workHaul = h.Claim?.Source?.Part;
+            if (workHaul != null && ReferenceEquals(workHaul.Ship, ship))
+                _workPoints.Add(ship.DetTransformPointToWorld(workHaul.LocalCenter));
 
             int delivered = 0;
             for (int i = 0; i < slots.Length; i++)
@@ -806,6 +822,7 @@ namespace ZTX.BioCirculation.Game
 
                         slot.Job = cand;
                         slot.Reaching = true;
+                        slot.Holding = false;
                         _claimedCarries.Add(cand);
                         if (cand.Source is Nugget adopted) _carriedNuggets.Add(adopted);
                         break;
@@ -814,6 +831,16 @@ namespace ZTX.BioCirculation.Game
 
                 if (slot.Job == null)
                 {
+                    int work = TentacleFollow.WorkTarget(i, _workPoints.Count);
+                    if (work >= 0)
+                    {
+                        TentacleFollow.HoldOffset(i, slots.Length, TentacleFollow.HoldFanTiles, out float dx, out float dy);
+                        slot.Holding = true;
+                        slot.Homing = false;
+                        MoveTip(slot, _workPoints[work] + new Vector2(dx, dy), grab * cdt);
+                        continue;
+                    }
+                    slot.Holding = false;
                     slot.Homing = TentacleFollow.StillHoming((restWorld - slot.Tip).Length, grab * cdt);
                     MoveTip(slot, restWorld, grab * cdt);
                     continue;
@@ -832,7 +859,7 @@ namespace ZTX.BioCirculation.Game
                 Nugget nugget = (Nugget)job.Source;
 
                 Vector2 nugLocal = ship.DetTransformPointFromWorld(nugget.DetWorldLocation);
-                float dropRange = range * 1.25f;
+                float dropRange = range * ArmReach.DropBand;
                 if (self.LocalCenter.DistanceSquaredTo(nugLocal) > dropRange * dropRange)
                 {
                     nugget.LinearVelocity = Vector2.Zero;
@@ -907,6 +934,7 @@ namespace ZTX.BioCirculation.Game
         {
             slot.Job = null;
             slot.Homing = true;
+            slot.Holding = false;
         }
 
         private static void MoveTip(ArmTipSlot slot, Vector2 target, float maxStep)

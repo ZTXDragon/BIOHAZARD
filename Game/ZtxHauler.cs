@@ -33,6 +33,8 @@ namespace ZTX.BioCirculation.Game
         public bool Initialized;
 
         public bool Homing;
+
+        public bool Holding;
     }
 
     internal class ZtxHauler : PartComponent

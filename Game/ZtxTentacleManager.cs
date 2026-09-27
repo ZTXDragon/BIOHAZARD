@@ -255,8 +255,11 @@ namespace ZTX.BioCirculation.Game
 
             var salvage = h.SalvageClaim;
             Part sp = salvage?.SalvagePart;
-            if (sp != null && !sp.IsDestroyed && ReferenceEquals(sp.Ship, ship) && sp.ExistsInSim(ship.Sim))
-                _targets.Add(new TargetInfo { Point = ship.TransformPointToWorld(sp.LocalCenter) });
+            // A rock on an asteroid is a part on ANOTHER ship; the arm reaches for it on the same
+            // terms the hauler works it (2026-09-28: it idled while the hits landed on the rock).
+            if (sp != null && !sp.IsDestroyed && sp.Ship != null && sp.ExistsInSim(ship.Sim) &&
+                MiningRule.AcceptsTarget(ReferenceEquals(sp.Ship, ship), h.CanMine))
+                _targets.Add(new TargetInfo { Point = sp.Ship.TransformPointToWorld(sp.LocalCenter) });
 
             Part bp = h.BuildClaim;
             if (bp != null && bp.IsUnderConstruction && ReferenceEquals(bp.Ship, ship))
@@ -395,7 +398,7 @@ namespace ZTX.BioCirculation.Game
                 bool pinned = false;
                 bool working = false;
                 ArmTipSlot slot = (slots != null && a < slots.Length) ? slots[a] : null;
-                if (slot != null && TentacleFollow.OnSimTip(slot.Initialized, slot.Job != null, slot.Homing))
+                if (slot != null && TentacleFollow.OnSimTip(slot.Initialized, slot.Job != null, slot.Homing, slot.Holding))
                 {
                     target = Vector2.Lerp(slot.PrevTip, slot.Tip, tval);
                     pinned = true;
@@ -418,7 +421,8 @@ namespace ZTX.BioCirculation.Game
                     float wander = (float)Math.Sin(time * omega * 0.5f + arm.Phase)
                                    * r.SwayAmplitude * 1.5f;
                     float breathe = 0.85f + 0.15f * (float)Math.Sin(time * omega * 0.23f + arm.Phase);
-                    target = anchorW + dir * (reach * r.IdleExtension * breathe)
+                    float idle = ArmReach.IdleTiles(hs != null ? hs.RangeTiles : 0f, reach, r.IdleExtension);
+                    target = anchorW + dir * (idle * breathe)
                              + perp * wander;
                 }
 

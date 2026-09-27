@@ -4,6 +4,7 @@ using Cosmoteer.Ships.Parts;
 using Cosmoteer.Ships.Rendering;
 using Cosmoteer.Ships.Parts.Logic;
 using Cosmoteer.Simulation.MediaEffects;
+using ZTX.BioCirculation.Core;
 using Vector2 = Halfling.Geometry.Vector2;
 
 namespace ZTX.BioCirculation.Game
@@ -104,7 +105,10 @@ namespace ZTX.BioCirculation.Game
 
             int segs = r.SegmentCount > 0 ? r.SegmentCount : 1;
             float len = r.SegmentLength > 0f ? r.SegmentLength : 0.5f;
-            restLocal = anchor + outward * (segs * len * r.IdleExtension);
+            // Idle extension is a fraction of the hauler's RANGE (2026-09-28, ZTX: "idle should be
+            // 60% from range"), so a longer arm does not rest further out; ArmReach clamps it to the arm.
+            float idle = ArmReach.IdleTiles(_hauler != null ? _hauler.RangeTiles : 0f, segs * len, r.IdleExtension);
+            restLocal = anchor + outward * idle;
             return true;
         }
 

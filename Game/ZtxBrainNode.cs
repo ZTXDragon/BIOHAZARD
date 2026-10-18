@@ -3,7 +3,6 @@ using Cosmoteer.Ships.Parts;
 
 namespace ZTX.BioCirculation.Game
 {
-    // The live component on one modular brain block.
     internal class ZtxBrainNode : PartComponent
     {
         private ZtxBrainManager _manager;

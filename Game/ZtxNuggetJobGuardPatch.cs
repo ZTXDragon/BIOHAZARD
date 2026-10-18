@@ -4,7 +4,6 @@ using HarmonyLib;
 
 namespace ZTX.BioCirculation.Game
 {
-    // Defensive guard for nugget-sourced transfer jobs (2026-09-12 crash fix).
     [HarmonyPatch(typeof(ResourceTransferJob), "IsSourceValid")]
     internal static class ZtxNuggetJobGuardPatch
     {

@@ -14,8 +14,6 @@ using Vector2 = Halfling.Geometry.Vector2;
 
 namespace ZTX.BioCirculation.Game
 {
-    // Animates every ZtxTentacle on one ship: procedural worm-arm chains that reach toward the
-    // part's active hauler claims and drift/sway when idle.
     internal class ZtxTentacleManager : ShipComponent
     {
         private static readonly ConditionalWeakTable<Ship, ZtxTentacleManager> s_managers =
@@ -23,7 +21,6 @@ namespace ZTX.BioCirculation.Game
 
         private readonly List<ZtxTentacle> _tentacles = new List<ZtxTentacle>();
 
-        // One arm target: a world point, optionally pinned (tip glued to it).
         private struct TargetInfo
         {
             public Vector2 Point;
@@ -39,8 +36,6 @@ namespace ZTX.BioCirculation.Game
 
         public ZtxTentacleManager()
         {
-            // Serial visual bucket (vanilla Oscillators). NOT 8/10/12/15 — those run under
-            // FastParallel and every node write would have to be deferred to the main thread.
             base.UpdateBucket = 7;
             base.UpdatingEnabled = true;
         }
@@ -54,8 +49,6 @@ namespace ZTX.BioCirculation.Game
             ZtxTentacleManager captured = manager;
             Ship capturedShip = ship;
 
-            // Same Sim-null branch as every other manager in this DLL: a ship's Sim is null
-            // while parts attach, and EnqueueDeterministic silently drops its delegate there.
             if (ship.Sim != null)
             {
                 ship.Sim.EnqueueDeterministic(ship.UniqueID, delegate
@@ -86,8 +79,6 @@ namespace ZTX.BioCirculation.Game
 
         public override void Update(SceneRoot root)
         {
-            // Proof-of-life, once. If this line never appears in the log, the frame hook
-            // itself is not running and nothing downstream matters.
             if (!_loggedAlive)
             {
                 _loggedAlive = true;
@@ -98,8 +89,6 @@ namespace ZTX.BioCirculation.Game
             Ship ship = base.Ship;
             if (ship?.Sim == null) return;
 
-            // Frame-cached, cheap. When out of sight, tear the nodes down the way SpaceCrew
-            // does with its salvage beams — they are lazily rebuilt when sight returns.
             bool visible = ship.IsWithinSightOfLocalPlayer;
             if (!visible)
             {
@@ -111,12 +100,10 @@ namespace ZTX.BioCirculation.Game
             }
             _wasVisible = true;
 
-            // Sim clock: pause-aware and speed-aware. Frame updates are skipped entirely while
-            // paused, so dt also never spans a pause.
             double now = ship.Sim.Clock.Time.Seconds;
             float dt = double.IsNaN(_lastTime) ? 0f : (float)(now - _lastTime);
             if (dt < 0f) dt = 0f;
-            if (dt > 0.1f) dt = 0.1f;   // never lurch after a hitch
+            if (dt > 0.1f) dt = 0.1f;
             _lastTime = now;
             float time = (float)now;
 
@@ -125,7 +112,6 @@ namespace ZTX.BioCirculation.Game
                 ZtxTentacle t = _tentacles[i];
                 Part p = t?.Part;
                 if (p == null) continue;
-                // A ship split reuses the SAME Part instances across both halves.
                 if (!ReferenceEquals(p.Ship, ship)) continue;
 
                 if (!t.IsUsable)
@@ -148,16 +134,12 @@ namespace ZTX.BioCirculation.Game
                 }
                 catch (Exception ex)
                 {
-                    // A visual must never take the frame loop down. Drop this part's nodes and
-                    // let them rebuild next frame.
                     Log.Exception("ZtxTentacleManager.Update", ex);
                     t.ReleaseNodes(true);
                     t.Arms = null;
                 }
             }
 
-            // Verbose only (2026-09-26): a flushed line per tentacle ship every 600 frames - the
-            // most frequent line in the log, 4388 of them over two sessions.
             if (++_frameCounter >= 600 && Config.VerboseLog)
             {
                 _frameCounter = 0;
@@ -203,8 +185,6 @@ namespace ZTX.BioCirculation.Game
                     outward = outward.LengthSquared > 1e-6f ? outward.Normalize() : new Vector2(0f, -1f);
                 }
 
-                // Anchor/Outward stay ship-local; the joint chain is seeded in WORLD space
-                // (see TentacleArm.Joints for why world).
                 Vector2 anchorW = ship.TransformPointToWorld(anchor);
                 Vector2 outwardW = ship.TransformPointToWorld(anchor + outward) - anchorW;
                 outwardW = outwardW.LengthSquared > 1e-6f ? outwardW.Normalize() : outwardW;
@@ -220,8 +200,6 @@ namespace ZTX.BioCirculation.Game
                     Joints = joints,
                     PrevJoints = prev,
                     TipGoal = joints[segs],
-                    // Visual-only phase. Hashed from grid location + arm index — NEVER Ship.Rand,
-                    // which is the deterministic RNG and must not be consumed at frame rate.
                     Phase = (((p.Location.X * 73856093) ^ (p.Location.Y * 19349663) ^ (a * 83492791))
                              & 0x3FF) * (6.2831853f / 1024f),
                 };
@@ -255,8 +233,6 @@ namespace ZTX.BioCirculation.Game
 
             var salvage = h.SalvageClaim;
             Part sp = salvage?.SalvagePart;
-            // A rock on an asteroid is a part on ANOTHER ship; the arm reaches for it on the same
-            // terms the hauler works it (2026-09-28: it idled while the hits landed on the rock).
             if (sp != null && !sp.IsDestroyed && sp.Ship != null && sp.ExistsInSim(ship.Sim) &&
                 MiningRule.AcceptsTarget(ReferenceEquals(sp.Ship, ship), h.CanMine))
                 _targets.Add(new TargetInfo { Point = sp.Ship.TransformPointToWorld(sp.LocalCenter) });
@@ -266,8 +242,6 @@ namespace ZTX.BioCirculation.Game
                 _targets.Add(new TargetInfo { Point = ship.TransformPointToWorld(bp.LocalCenter) });
 
             var haul = h.Claim;
-            // Source.Part guard is load-bearing: the DEFAULT IResourceSource.Center THROWS
-            // NotSupportedException when Part is null.
             Part hp = haul?.Source?.Part;
             if (hp != null && ReferenceEquals(hp.Ship, ship))
                 _targets.Add(new TargetInfo { Point = ship.TransformPointToWorld(hp.LocalCenter) });
@@ -302,8 +276,6 @@ namespace ZTX.BioCirculation.Game
             ZtxTentacleRules r = t.Rules;
             float len = r.SegmentLength > 0f ? r.SegmentLength : 0.5f;
             float omega = r.SwaySpeed * 6.2831853f;
-            // Rules value is DEGREES (see ZtxTentacleRules.MaxBendAngle); everything in this
-            // file computes in radians. 0 / >=180 degrees means no clamp.
             float maxBend = r.MaxBendAngle * 0.017453292f;
             bool clampBend = maxBend > 0f && maxBend < 3.14159f;
 
@@ -339,8 +311,6 @@ namespace ZTX.BioCirculation.Game
                     {
                         Vector2 cur = joints[j];
                         Vector2 vel = (cur - prevJ[j]) * damp;
-                        // Tip-weighted fluid drag: the towed rope ARCS through turns
-                        // instead of aligning straight (see ZtxTentacleRules.RagdollDrag).
                         if (dragK > 0f)
                             vel *= 1f / (1f + dragK * ((float)j / segs) * vel.Length);
                         joints[j] = cur + vel;
@@ -349,7 +319,6 @@ namespace ZTX.BioCirculation.Game
                     joints[0] = anchorW;
                     prevJ[0] = anchorW;
 
-                    // A few relaxation iterations keep the chain taut without stiffness.
                     if (_constraintScratch.Length < segs + 1) _constraintScratch = new Vector2[segs + 1];
                     for (int j = 0; j <= segs; j++) _constraintScratch[j] = joints[j];
                     for (int iter = 0; iter < 3; iter++)
@@ -367,7 +336,6 @@ namespace ZTX.BioCirculation.Game
                             float err = (distl - len) / distl;
                             if (j == 0)
                             {
-                                // Base is pinned: the child takes the whole correction.
                                 joints[1] -= dl * err;
                             }
                             else
@@ -405,8 +373,6 @@ namespace ZTX.BioCirculation.Game
                 }
                 else if (misc < _targets.Count)
                 {
-                    // ONE arm per task, spares idle: leftover unpinned reach targets —
-                    // salvage, build sites, haul sources — go to arms without a carry.
                     target = _targets[misc++].Point;
                     working = true;
                 }
@@ -447,7 +413,7 @@ namespace ZTX.BioCirculation.Game
 
                     float steerScale = motionScale < stretchScale ? motionScale : stretchScale;
 
-                    float wave = r.SwayAmplitude * 55f * steerScale;   // force scale from the sway knob
+                    float wave = r.SwayAmplitude * 55f * steerScale;
 
                     Vector2 tipSteer = (target - joints[segs])
                                        * ((r.TipPull > 0f ? r.TipPull : 30f) * steerScale);
@@ -462,7 +428,6 @@ namespace ZTX.BioCirculation.Game
                             ? new Vector2(-seg.Y / slen, seg.X / slen)
                             : new Vector2(-outwardW.Y, outwardW.X);
 
-                        // sin(wt - k*j): the crest moves from anchor toward tip.
                         float ramp = (float)j / segs;
                         float waveRamp = r.BaseWaveFraction + (1f - r.BaseWaveFraction) * ramp;
                         Vector2 accel = perp * ((float)Math.Sin(time * omega + arm.Phase - j * 0.7f)
@@ -502,12 +467,8 @@ namespace ZTX.BioCirculation.Game
                                 joints[j + 1] -= half;
                             }
                         }
-                        // Same bend cap as the limp path — before the mirror, see above.
-                        // Never while WORKING: a task gets full fold freedom.
                         if (clampBend && !working) ClampBend(joints, segs, maxBend);
                     }
-                    // BOLTED SEGMENTS — same exact forward pass as the limp path (segments
-                    // must never stretch apart no matter how fast the anchor moves).
                     joints[0] = anchorW;
                     for (int j = 0; j < segs; j++)
                     {
@@ -525,8 +486,6 @@ namespace ZTX.BioCirculation.Game
 
                 arm.TipGoal = target;
 
-                // Follow-the-leader with a pinned base (FABRIK-lite, one backward + one
-                // forward pass). Backward: drag the chain to the goal from the tip.
                 joints[segs] = arm.TipGoal;
                 for (int j = segs - 1; j >= 0; j--)
                 {
@@ -535,7 +494,6 @@ namespace ZTX.BioCirculation.Game
                     joints[j] = dist > 1e-5f ? joints[j + 1] + d * (len / dist)
                                              : joints[j + 1] - outwardW * len;
                 }
-                // Forward: re-pin the base at the (moving) anchor and push back out.
                 joints[0] = anchorW;
                 for (int j = 0; j < segs; j++)
                 {
@@ -552,8 +510,6 @@ namespace ZTX.BioCirculation.Game
                 float pinMotionScale = pinAnchorSpeed <= 1.5f ? 1f
                                      : (pinAnchorSpeed >= 4f ? 0f : (4f - pinAnchorSpeed) / 2.5f);
 
-                // Record this frame's CLEAN pose (pre-ripple) so a mid-motion knockout
-                // carries real momentum into the ragdoll.
                 Vector2[] pj = arm.PrevJoints;
                 for (int j = 0; j <= segs; j++) pj[j] = joints[j];
 
@@ -567,8 +523,6 @@ namespace ZTX.BioCirculation.Game
                     if (dist > 1e-5f)
                     {
                         Vector2 perp = new Vector2(-seg.Y / dist, seg.X / dist);
-                        // Base-floored envelope, scaled by ship motion - no ripple while
-                        // trailing at speed.
                         float amp = r.SwayAmplitude * pinMotionScale
                                     * (r.BaseWaveFraction + (1f - r.BaseWaveFraction) * ((float)j / segs));
                         off = perp * ((float)Math.Sin(time * omega + arm.Phase + j * 0.9f) * amp * 0.35f);
@@ -614,7 +568,6 @@ namespace ZTX.BioCirculation.Game
                 arm.Quads = new ManagedShipQuad[segs];
                 for (int j = 0; j < segs; j++)
                 {
-                    // The outermost segment may use a dedicated painted TIP sprite.
                     AtlasSprite sprite = (j == segs - 1 && r.TipSprite != null)
                         ? r.TipSprite : r.SegmentSprite;
                     arm.Quads[j] = new ManagedShipQuad(
@@ -629,8 +582,6 @@ namespace ZTX.BioCirculation.Game
                 ManagedShipQuad q = arm.Quads[j];
                 if (q == null) continue;
 
-                // Repainting the ship has to reach arms that already exist, and the setter
-                // dirty-checks, so an unchanged colour costs one comparison.
                 q.Color = armColor;
 
                 Vector2 la = ship.TransformPointFromWorld(arm.Joints[j]);

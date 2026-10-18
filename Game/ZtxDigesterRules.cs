@@ -8,8 +8,6 @@ using Halfling.Serialization;
 
 namespace ZTX.BioCirculation.Game
 {
-    // Rules for ZtxDigester — a stomach that accepts ANY resource in ANY cell of a single
-    // FlexResourceGrid and converts each one by its own recipe.
     [ReflectiveSerialization(Explicit = true)]
     [ReflectivePortableHashing(Explicit = true)]
     [SerialDerivedType(TypeName = "ZtxDigester")]
@@ -35,7 +33,6 @@ namespace ZTX.BioCirculation.Game
         [PortableHash]
         public Dictionary<ID<ResourceRules>, Recipe> Recipes = new Dictionary<ID<ResourceRules>, Recipe>();
 
-        // One resource's conversion terms.
         [ReflectiveSerialization(Explicit = true)]
         [ReflectivePortableHashing(Explicit = true)]
         public class Recipe

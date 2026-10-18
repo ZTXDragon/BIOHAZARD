@@ -2,7 +2,6 @@ using System;
 
 namespace ZTX.BioCirculation.Core
 {
-    // How far a tentacle arm is drawn for the work its hauler accepts, and how far it idles.
     public static class ArmReach
     {
         public const float DropBand = 1.25f;
@@ -18,7 +17,6 @@ namespace ZTX.BioCirculation.Core
             if (segmentLength <= 0f) return 0;
             float needed = TilesNeeded(rangeTiles, anchorOffset);
             if (needed <= 0f) return 0;
-            // The epsilon keeps an exact multiple (1.25 x 4 = 5) from rounding up on float noise.
             return (int)Math.Ceiling(needed / segmentLength - 1e-4);
         }
 

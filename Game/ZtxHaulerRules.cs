@@ -9,7 +9,6 @@ using Halfling.Serialization;
 
 namespace ZTX.BioCirculation.Game
 {
-    // Rules for ZtxHauler — the organ that does a crew member's hauling job.
     [ReflectiveSerialization(Explicit = true)]
     [ReflectivePortableHashing(Explicit = true)]
     [SerialDerivedType(TypeName = "ZtxHauler")]

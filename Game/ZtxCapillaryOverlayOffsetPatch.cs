@@ -4,11 +4,10 @@ using Cosmoteer.Game.Gui;
 using Cosmoteer.Ships.Blueprints.Graphics;
 using Halfling.Geometry;
 using HarmonyLib;
+using ZTX.BioCirculation.Core;
 
 namespace ZTX.BioCirculation.Game
 {
-    // Slide capillary port overlays SIDEWAYS along their face (v0.49.x) so the artery and vein
-    // markers of a dual-network face sit beside each other instead of stacking on the face midpoint
     [HarmonyPatch(typeof(NetworkPortBlueprintOverlayRenderer), "GetPortDrawData")]
     internal static class ZtxCapillaryOverlayOffsetPatch
     {
@@ -29,17 +28,14 @@ namespace ZTX.BioCirculation.Game
                 rules.OverlayIcons.TryGetValue(new ID<PartNetworkOverlayIcon>("VeinPortCap"), out _veinIcon);
             }
 
-            float side;
-            if (ReferenceEquals(icon, _arteryIcon) && _arteryIcon != null) side = -1f;
-            else if (ReferenceEquals(icon, _veinIcon) && _veinIcon != null) side = 1f;
+            bool artery;
+            if (ReferenceEquals(icon, _arteryIcon) && _arteryIcon != null) artery = true;
+            else if (ReferenceEquals(icon, _veinIcon) && _veinIcon != null) artery = false;
             else return;
 
-            // |sin| > 0.5 = facing Up or Down (Halfling angles: Up = -pi/2,
-            // Down = +pi/2, y-down) = horizontal face = lateral axis is X.
             bool facesUpDown = MathF.Abs(MathF.Sin(__result.Direction.ToRadians())) > 0.5f;
-            Vector2 shift = facesUpDown
-                ? new Vector2(side * Offset, 0f)
-                : new Vector2(0f, side * Offset);
+            CapillaryOverlay.Lateral(facesUpDown, artery, Offset, out float dx, out float dy);
+            Vector2 shift = new Vector2(dx, dy);
 
             __result = new NetworkPortBlueprintOverlayRenderer.PortDrawData(
                 __result.Midpoint + shift,

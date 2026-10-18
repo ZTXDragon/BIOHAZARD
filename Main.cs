@@ -20,8 +20,6 @@ namespace ZTX.BioCirculation
                 var harmony = new Harmony("ztx.biocirculation");
                 harmony.PatchAll(Assembly.GetExecutingAssembly());
                 Log.Info("init OK. " + Log.VERSION + " | .NET " + Environment.Version);
-                // After PatchAll and outside it: the probe patches each hook on its own, so a
-                // hook that fails cannot take the mod's real patches down with it.
                 if (Config.PerfProbe) Game.ZtxPerfProbe.Install(harmony);
             }
             catch (Exception ex) { Log.Exception("Main.RunInitOnce", ex); }

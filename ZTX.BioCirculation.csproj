@@ -6,7 +6,6 @@
     <AssemblyName>ZTX.BioCirculation</AssemblyName>
     <RootNamespace>ZTX.BioCirculation</RootNamespace>
     <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
-    <!-- CS0649: rules fields are assigned by Halfling's reflective deserializer, not by C# code. -->
     <NoWarn>$(NoWarn);CA1416;CS0649</NoWarn>
     <CosmoteerBin Condition="'$(CosmoteerBin)' == ''">D:\SteamLibrary\steamapps\common\Cosmoteer\Bin</CosmoteerBin>
     <YamlModDir Condition="'$(YamlModDir)' == ''">D:\SteamLibrary\steamapps\workshop\content\799600\3577650065</YamlModDir>
@@ -19,10 +18,11 @@
   <ItemGroup>
     <PackageReference Include="Krafs.Publicizer" Version="2.3.0" PrivateAssets="all" />
     <Publicize Include="Cosmoteer" />
-    <!-- These events are already public in vanilla; publicizing their compiler-generated
-         private backing fields (same name) makes every reference ambiguous (CS0229). -->
     <DoNotPublicize Include="Cosmoteer:Cosmoteer.Ships.Parts.CommonBasePartsManager`1.PartAdded" />
     <DoNotPublicize Include="Cosmoteer:Cosmoteer.Ships.Parts.CommonBasePartsManager`1.PartRemoved" />
+    <DoNotPublicize Include="Cosmoteer:Cosmoteer.Ships.Parts.CommonBasePartsManager`1.PartsChanged" />
+    <DoNotPublicize Include="Cosmoteer:Cosmoteer.Ships.Networks.ShipPartNetworkManager`3.NetworkChanged" />
     <Publicize Include="HalflingCore" />
+    <DoNotPublicize Include="HalflingCore:Halfling.Gui.Widget.Activated" />
   </ItemGroup>
 </Project>

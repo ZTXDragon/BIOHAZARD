@@ -4,11 +4,9 @@ using Cosmoteer.Ships.Resources;
 
 namespace ZTX.BioCirculation.Game
 {
-    // Debug switch + formatters for the transfer pipeline (2026-09-12, user request: the chain
-    // instability persisted after the rework — log every decision the pipeline makes so the next
     internal static class ZtxHaulDebug
     {
-        internal const bool Verbose = true;
+        internal static bool Verbose => Config.VerboseLog;
 
         internal static string Sink(IResourceSink s)
         {

@@ -10,7 +10,6 @@ using Halfling.Serialization;
 
 namespace ZTX.BioCirculation.Game
 {
-    // Rules for ZtxTentacle — persistent, procedurally animated tentacle arms attached to a part.
     [ReflectiveSerialization(Explicit = true)]
     [ReflectivePortableHashing(Explicit = true)]
     [SerialDerivedType(TypeName = "ZtxTentacle")]

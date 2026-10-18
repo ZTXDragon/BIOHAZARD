@@ -2,7 +2,6 @@ using System.Collections.Generic;
 
 namespace ZTX.BioCirculation.Core
 {
-    // One damaged part a distributor could feed, in ship grid coordinates.
     public readonly struct HealCandidate
     {
         public readonly int X;
@@ -18,7 +17,6 @@ namespace ZTX.BioCirculation.Core
         }
     }
 
-    // Shares a distributor's banked healing energy across the damaged bio parts around it.
     public static class HealSpread
     {
         public static int Allocate(int originX, int originY, int radius, int available,
@@ -31,8 +29,6 @@ namespace ZTX.BioCirculation.Core
             for (int i = 0; i < n; i++) amounts[i] = 0;
             if (available <= 0) return 0;
 
-            // Square reach (Chebyshev), matching the square area the highlight draws. A
-            // circular reach would look wrong against the overlay the player is aiming with.
             var want = new int[n];
             int wanting = 0;
             for (int i = 0; i < n; i++)
@@ -86,7 +82,7 @@ namespace ZTX.BioCirculation.Core
                     want[i] -= give;
                     available -= give;
                     total += give;
-                    if (want[i] > 0) wanting++;   // still hungry: eligible for the next pass
+                    if (want[i] > 0) wanting++;
                 }
             }
             return total;

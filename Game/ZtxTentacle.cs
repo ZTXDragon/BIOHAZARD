@@ -9,7 +9,6 @@ using Vector2 = Halfling.Geometry.Vector2;
 
 namespace ZTX.BioCirculation.Game
 {
-    // One arm of a tentacle part: its anchor, its joint chain, and its media nodes.
     internal sealed class TentacleArm
     {
         public Vector2 Anchor;
@@ -24,11 +23,9 @@ namespace ZTX.BioCirculation.Game
 
         public ManagedShipQuad[] Quads;
 
-
         public float Phase;
     }
 
-    // Lifecycle owner for a part's animated tentacle arms.
     internal class ZtxTentacle : PartComponent
     {
         private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Part, ZtxTentacle> s_byPart =
@@ -105,8 +102,6 @@ namespace ZTX.BioCirculation.Game
 
             int segs = r.SegmentCount > 0 ? r.SegmentCount : 1;
             float len = r.SegmentLength > 0f ? r.SegmentLength : 0.5f;
-            // Idle extension is a fraction of the hauler's RANGE (2026-09-28, ZTX: "idle should be
-            // 60% from range"), so a longer arm does not rest further out; ArmReach clamps it to the arm.
             float idle = ArmReach.IdleTiles(_hauler != null ? _hauler.RangeTiles : 0f, segs * len, r.IdleExtension);
             restLocal = anchor + outward * idle;
             return true;
@@ -156,7 +151,6 @@ namespace ZTX.BioCirculation.Game
             _manager = ZtxTentacleManager.GetOrCreate(base.Ship);
             _manager?.Register(this);
 
-            // Per part, so verbose only: every log line is a ~3 ms disk flush (see Log.Verbose).
             Log.Verbose("tentacle attached on " + base.Part + " at " + base.Part.Location +
                         " sprite=" + (Rules.SegmentSprite != null ? "ok" : "NULL") +
                         " manager=" + (_manager != null ? "ok" : "NULL"));

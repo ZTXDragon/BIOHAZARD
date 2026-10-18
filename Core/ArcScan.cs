@@ -1,6 +1,5 @@
 namespace ZTX.BioCirculation.Core
 {
-    // A run of open rays inside a swept arc: where the eye can actually see.
     public readonly struct ArcSpan
     {
         public readonly int Start;
@@ -27,7 +26,6 @@ namespace ZTX.BioCirculation.Core
         }
     }
 
-    // Turns a swept arc of blocked/open rays into the one opening the eye actually looks through.
     public static class ArcScan
     {
         public static ArcSpan LargestOpenSpan(bool[] open)

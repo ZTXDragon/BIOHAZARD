@@ -4,8 +4,6 @@ using Halfling.Serialization;
 
 namespace ZTX.BioCirculation.Game
 {
-    // Rules for ZtxFlowGate — a toggle driven by SYSTEM-WIDE blood fullness (2026-08-24, user
-    // request).
     [ReflectiveSerialization(Explicit = true)]
     [ReflectivePortableHashing(Explicit = true)]
     [SerialDerivedType(TypeName = "ZtxFlowGate")]

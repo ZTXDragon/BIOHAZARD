@@ -7,8 +7,6 @@ using ZTX.BioCirculation.Core;
 
 namespace ZTX.BioCirculation.Game
 {
-    // Turns a ship's live ZtxFlowNode components into a pure-core BloodGraph, and copies volumes
-    // back afterwards.
     internal static class ShipGraphAdapter
     {
         public static int EdgeCount { get; private set; }
@@ -29,7 +27,7 @@ namespace ZTX.BioCirculation.Game
             indexByNode.Clear();
             nodeByFlow.Clear();
 
-            var byPart = new Dictionary<Part, List<ZtxFlowNode>>();
+            var ordered = new List<ZtxFlowNode>();
             for (int i = 0; i < flowNodes.Count; i++)
             {
                 ZtxFlowNode fn = flowNodes[i];
@@ -50,148 +48,67 @@ namespace ZTX.BioCirculation.Game
                 };
                 graph.Add(core);
                 indexByNode[fn] = i;
+                ordered.Add(fn);
                 nodeByFlow[fn] = core;
-                if (!byPart.TryGetValue(fn.Part, out var onPart))
-                    byPart[fn.Part] = onPart = new List<ZtxFlowNode>();
-                onPart.Add(fn);
             }
 
-            var seenOrdered = new HashSet<long>();
-            var neighbours = new Dictionary<ZtxFlowNode, List<ZtxFlowNode>>();
-            EdgeCount = 0;
-            DirectedEdgeCount = 0;
-            PumpCount = 0;
-            ConsideredEdgeCount = 0;
-            BlockedEdgeCount = 0;
-
-            foreach (KeyValuePair<ZtxFlowNode, int> entry in indexByNode)
-            {
-                ZtxFlowNode a = entry.Key;
-                int aId = entry.Value;
-
-                foreach (ZtxFlowNode b in GetNetworkNeighbours(a, byPart))
-                {
-                    if (!indexByNode.TryGetValue(b, out int bId)) continue;
-                    if (bId == aId) continue;
-
-                    if (!neighbours.TryGetValue(a, out var list))
-                        neighbours[a] = list = new List<ZtxFlowNode>();
-                    if (!list.Contains(b)) list.Add(b);
-
-                    TryConnect(graph, seenOrdered, a, aId, b, bId);
-                    TryConnect(graph, seenOrdered, b, bId, a, aId);
-                }
-            }
-
-            var seenPumps = new HashSet<long>();
-            foreach (KeyValuePair<ZtxFlowNode, int> entry in indexByNode)
-            {
-                ZtxFlowNode v = entry.Key;
-                if (v.Rules.Role != FlowRole.Valve && !v.Rules.Directional) continue;
-                if (!neighbours.TryGetValue(v, out var around)) continue;
-
-                foreach (ZtxFlowNode n in around)
-                {
-                    if (!indexByNode.TryGetValue(n, out int nId)) continue;
-                    int side = SideOf(v, n);
-                    if (side < 0) TryPump(graph, seenPumps, n, nId, v, entry.Value);       // behind -> valve
-                    else if (side > 0) TryPump(graph, seenPumps, v, entry.Value, n, nId);  // valve -> front
-                }
-            }
-
-            foreach (KeyValuePair<ZtxFlowNode, int> entry in indexByNode)
-            {
-                ZtxFlowNode v = entry.Key;
-                if (!v.Rules.StackPump) continue;
-                if (v.Rules.Role == FlowRole.Valve || v.Rules.Directional) continue;
-                if (!neighbours.TryGetValue(v, out var around)) continue;
-
-                foreach (ZtxFlowNode n in around)
-                {
-                    if (!n.Rules.StackPump) continue;
-                    if (!indexByNode.TryGetValue(n, out int nId)) continue;
-                    if (SideOf(v, n) > 0)
-                        TryPump(graph, seenPumps, v, entry.Value, n, nId);   // self -> peer in front
-                }
-            }
-
+            var stats = new TopologyStats();
+            BuildTopology(graph, ordered, indexByNode, stats);
+            EdgeCount = stats.Edges;
+            DirectedEdgeCount = stats.DirectedEdges;
+            PumpCount = stats.Pumps;
+            ConsideredEdgeCount = stats.Considered;
+            BlockedEdgeCount = stats.Blocked;
             return graph;
         }
 
-
-        private static void TryConnect(BloodGraph graph, HashSet<long> seen,
-                                       ZtxFlowNode from, int fromId, ZtxFlowNode to, int toId)
+        private static IEnumerable<int> CollectLinks(ZtxFlowNode self, Dictionary<Part, int> partIndex)
         {
-            if (!seen.Add(((long)fromId << 32) | (uint)toId)) return;
-
-            ConsideredEdgeCount++;
-
-            if (!PermitsOutflow(from, to) || !PermitsInflow(to, from))
+            Part part = self.Part;
+            if (part == null) yield break;
+            IReadOnlyList<PartComponent> comps = part.Components;
+            for (int i = 0; i < comps.Count; i++)
             {
-                BlockedEdgeCount++;
-                return;
-            }
-
-            graph.Connect(fromId, toId);
-            DirectedEdgeCount++;
-            if (fromId < toId) EdgeCount++;
-        }
-
-        private static bool PermitsOutflow(ZtxFlowNode self, ZtxFlowNode other)
-        {
-            if (!self.Rules.Directional) return true;
-            return SideOf(self, other) > 0;          // strictly in front
-        }
-
-        private static bool PermitsInflow(ZtxFlowNode self, ZtxFlowNode other)
-        {
-            if (!self.Rules.Directional) return true;
-            // A directional pressure source is an origin, never a destination: blood must not
-            // run back into the heart even from behind.
-            if (self.Rules.Role == FlowRole.Source) return false;
-            return SideOf(self, other) < 0;          // strictly behind
-        }
-
-        private static int SideOf(ZtxFlowNode self, ZtxFlowNode other)
-        {
-            return other?.Part == null ? 0 : SideOfPart(self, other.Part);
-        }
-
-        private static int SideOfPart(ZtxFlowNode self, Part otherPart)
-        {
-            Part sp = self.Part;
-            if (sp == null || otherPart == null) return 0;
-
-            IntVector2 fwd = ForwardOf(self, sp);
-            IntRect sr = new PartInfo(sp).PhysicalRect;
-            IntRect or = new PartInfo(otherPart).PhysicalRect;
-
-            if (fwd.Y < 0) return or.Bottom <= sr.Top ? 1 : (or.Top >= sr.Bottom ? -1 : 0);
-            if (fwd.Y > 0) return or.Top >= sr.Bottom ? 1 : (or.Bottom <= sr.Top ? -1 : 0);
-            if (fwd.X < 0) return or.Right <= sr.Left ? 1 : (or.Left >= sr.Right ? -1 : 0);
-            if (fwd.X > 0) return or.Left >= sr.Right ? 1 : (or.Right <= sr.Left ? -1 : 0);
-            return 0;
-        }
-
-        private static bool FacePermits(ZtxFlowNode self, ZtxFlowNode other,
-                                        Dictionary<Part, List<ZtxFlowNode>> byPart)
-        {
-            Part op = other?.Part;
-            if (op == null) return false;
-
-            if (self.Rules.FaceOnly) return SideOfPart(self, op) > 0;
-
-            if (byPart.TryGetValue(self.Part, out var siblings))
-            {
-                for (int i = 0; i < siblings.Count; i++)
+                var port = comps[i] as BasePartNetworkPort;
+                if (port == null || !PortCarriesNetwork(port.Rules, self.Rules.Network)) continue;
+                foreach (ComponentNode<Part, PartComponent> node in NodesOf(port))
                 {
-                    ZtxFlowNode sib = siblings[i];
-                    if (sib == self || !sib.Rules.FaceOnly) continue;
-                    if (sib.Rules.Network != self.Rules.Network) continue;
-                    if (SideOfPart(sib, op) > 0) return false;
+                    foreach (var route in node.OutboundRoutes)
+                        if (route.Endpoint?.Component?.Part is Part p && partIndex.TryGetValue(p, out int idx)) yield return idx;
+                    foreach (var route in node.InboundRoutes)
+                        if (route.Origin?.Component?.Part is Part p && partIndex.TryGetValue(p, out int idx)) yield return idx;
                 }
             }
-            return true;
+        }
+
+        private static void BuildTopology(BloodGraph graph, List<ZtxFlowNode> ordered,
+                                          Dictionary<ZtxFlowNode, int> indexByNode, TopologyStats stats)
+        {
+            var partIndex = new Dictionary<Part, int>();
+            var rects = new List<TopoRect>();
+            var nodes = new List<TopoNode>(ordered.Count);
+            foreach (ZtxFlowNode fn in ordered)
+            {
+                Part p = fn.Part;
+                if (!partIndex.TryGetValue(p, out int pi))
+                {
+                    pi = rects.Count;
+                    partIndex[p] = pi;
+                    IntRect r = new PartInfo(p).PhysicalRect;
+                    rects.Add(new TopoRect(r.Left, r.Top, r.Right, r.Bottom));
+                }
+                IntVector2 f = ForwardOf(fn, p);
+                nodes.Add(new TopoNode
+                {
+                    Id = indexByNode[fn], Part = pi, Network = fn.Rules.Network, Role = ToCoreRole(fn.Rules.Role),
+                    Directional = fn.Rules.Directional, FaceOnly = fn.Rules.FaceOnly,
+                    StackPump = fn.Rules.StackPump, FacingX = f.X, FacingY = f.Y,
+                });
+            }
+            var links = new List<(int, int)>();
+            for (int i = 0; i < ordered.Count; i++)
+                foreach (int other in CollectLinks(ordered[i], partIndex)) links.Add((i, other));
+            TopologyBuilder.Wire(graph, nodes, rects, links, stats);
         }
 
         private static IntVector2 ForwardOf(ZtxFlowNode node, Part part)
@@ -208,18 +125,6 @@ namespace ZTX.BioCirculation.Game
             if (v.Y < 0) return "Up";
             if (v.Y > 0) return "Down";
             return "?";
-        }
-
-        private static void TryPump(BloodGraph graph, HashSet<long> seen,
-                                    ZtxFlowNode from, int fromId, ZtxFlowNode to, int toId)
-        {
-            if (fromId == toId) return;
-            if (!PermitsOutflow(from, to)) return;
-            if (!PermitsInflow(to, from)) return;
-            if (!seen.Add(((long)fromId << 32) | (uint)toId)) return;
-
-            graph.AddPump(fromId, toId);
-            PumpCount++;
         }
 
         public static int ScaleSignature(List<ZtxFlowNode> nodes)
@@ -270,45 +175,13 @@ namespace ZTX.BioCirculation.Game
             return written;
         }
 
-        private static IEnumerable<ZtxFlowNode> GetNetworkNeighbours(
-            ZtxFlowNode self, Dictionary<Part, List<ZtxFlowNode>> byPart)
+        internal static bool PortCarriesNetwork(BasePartNetworkPortRules rules, string network)
         {
-            Part part = self.Part;
-            if (part == null) yield break;
-            string wantedNetwork = self.Rules.Network;
-
-            IReadOnlyList<PartComponent> comps = part.Components;
-            for (int i = 0; i < comps.Count; i++)
-            {
-                var port = comps[i] as BasePartNetworkPort;
-                if (port == null) continue;
-                if (!PortCarriesNetwork(port, wantedNetwork)) continue;
-
-                foreach (ComponentNode<Part, PartComponent> node in NodesOf(port))
-                {
-                    foreach (var route in node.OutboundRoutes)
-                    {
-                        ZtxFlowNode other = FlowNodeOf(route.Endpoint, byPart, wantedNetwork, part);
-                        if (other != null && other != self && FacePermits(self, other, byPart))
-                            yield return other;
-                    }
-                    foreach (var route in node.InboundRoutes)
-                    {
-                        ZtxFlowNode other = FlowNodeOf(route.Origin, byPart, wantedNetwork, part);
-                        if (other != null && other != self && FacePermits(self, other, byPart))
-                            yield return other;
-                    }
-                }
-            }
-        }
-
-        private static bool PortCarriesNetwork(BasePartNetworkPort port, string network)
-        {
-            var types = port.Rules?.Types;
+            var types = rules?.Types;
             if (types == null || string.IsNullOrEmpty(network)) return false;
             for (int i = 0; i < types.Length; i++)
             {
-                if (types[i].ToString() == network) return true;
+                if (PortNetwork.Carries(types[i].ToString(), network)) return true;
             }
             return false;
         }
@@ -322,34 +195,7 @@ namespace ZTX.BioCirculation.Game
             if (source != null && source != endpoint) yield return source;
         }
 
-        private static ZtxFlowNode FlowNodeOf(
-            ComponentNode<Part, PartComponent> node,
-            Dictionary<Part, List<ZtxFlowNode>> byPart,
-            string network,
-            Part callerPart)
-        {
-            Part owner = node?.Component?.Part;
-            if (owner == null) return null;
-            if (!byPart.TryGetValue(owner, out var onPart)) return null;
-
-            ZtxFlowNode fallback = null;
-            for (int i = 0; i < onPart.Count; i++)
-            {
-                ZtxFlowNode cand = onPart[i];
-                if (cand.Rules.Network != network) continue;
-                if (cand.Rules.FaceOnly)
-                {
-                    if (callerPart != null && SideOfPart(cand, callerPart) > 0) return cand;
-                }
-                else if (fallback == null)
-                {
-                    fallback = cand;
-                }
-            }
-            return fallback;   // null when the part is on a different network entirely
-        }
-
-        private static NodeRole ToCoreRole(FlowRole role)
+        internal static NodeRole ToCoreRole(FlowRole role)
         {
             switch (role)
             {

@@ -4,12 +4,12 @@ namespace ZTX.BioCirculation.Core
     {
         public readonly int Id;
         public NodeRole Role;
-        public int Volume;        // current blood units (inventory)
-        public int Capacity;      // max blood units
-        public int Decay;         // PressureDecay cost to enter this node (>=1 for pipes)
-        public int PMax;          // reset target if this is a reset point; 0 otherwise
-        public int Pressure;      // computed each field rebuild (static routing value)
-        public int FlowRate = 4;  // max units this node may emit per SECOND, heart-buff scaled
+        public int Volume;
+        public int Capacity;
+        public int Decay;
+        public int PMax;
+        public int Pressure;
+        public int FlowRate = 4;
 
         public int RateCredit;
 
@@ -30,12 +30,10 @@ namespace ZTX.BioCirculation.Core
             }
         }
 
-        public bool PumpDriven;   // moved only by pumps; excluded from gradient flow entirely
-        // Equalization model (biomass): moved only by DiffusionStep, excluded from the
-        // pressure field and gradient flow entirely. See DiffusionStep for the model.
+        public bool PumpDriven;
         public bool Diffusion;
         public bool PinPressureZero;
-        public bool PropagatePressure = true;  // false = holds PMax for itself, paints nothing outward
+        public bool PropagatePressure = true;
 
         public BloodNode(int id, NodeRole role, int capacity, int decay)
         {

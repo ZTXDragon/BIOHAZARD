@@ -2,8 +2,6 @@ using System;
 
 namespace ZTX.BioCirculation.Core
 {
-    // A hauling organ's reach, and the ring that shows it in build mode (2026-09-26, ZTX: "so
-    // player can see in the build mode how far it can reach and what it can service", drawn "like
     public static class ReachRing
     {
         public const float SegmentTiles = 1f;

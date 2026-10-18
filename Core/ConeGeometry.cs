@@ -3,25 +3,22 @@ using System.Collections.Generic;
 
 namespace ZTX.BioCirculation.Core
 {
-    // Builds a sight cone out of overlapping discs, because the engine has no wedge.
     public static class ConeGeometry
     {
         private const float SmoothFactor = 0.40f;
 
         public static List<Disc> Build(float ox, float oy, float dir, float halfAngle,
-                                       float range, int maxDiscs, float start = 1f)
+                                       float range, int maxDiscs, ITrig trig, float start = 1f)
         {
             var list = new List<Disc>();
             if (maxDiscs <= 0 || halfAngle <= 0f || range <= 0f) return list;
 
-            float s = (float)Math.Sin(halfAngle);
+            float s = (float)trig.Sin(halfAngle);
             if (s <= 0f) return list;
 
-            float cos = (float)Math.Cos(dir);
-            float sin = (float)Math.Sin(dir);
+            float cos = (float)trig.Cos(dir);
+            float sin = (float)trig.Sin(dir);
 
-            // Hard limit: beyond this ratio neighbours separate and the cone breaks into beads.
-            //   d2 - d1 <= s*(d1 + d2)  =>  d2/d1 <= (1+s)/(1-s)
             float kMax = s >= 1f ? float.MaxValue : (1f + s) / (1f - s);
             float kSmooth = 1f + SmoothFactor * s;
             if (kSmooth > kMax) kSmooth = kMax;
@@ -34,7 +31,7 @@ namespace ZTX.BioCirculation.Core
             int discs = 1;
             if (start < last && kSmooth > 1f)
             {
-                double needed = Math.Log(last / start) / Math.Log(kSmooth);
+                double needed = trig.Log(last / start) / trig.Log(kSmooth);
                 discs = (int)Math.Ceiling(needed) + 1;
             }
             if (discs > maxDiscs) discs = maxDiscs;
@@ -44,16 +41,15 @@ namespace ZTX.BioCirculation.Core
             float k = 1f;
             if (discs > 1)
             {
-                // If the budget binds, pull the start outward so neighbours still overlap.
-                float minFirst = last / (float)Math.Pow(kMax, discs - 1);
+                float minFirst = last / (float)trig.Pow(kMax, discs - 1);
                 first = start > minFirst ? start : minFirst;
-                k = (float)Math.Pow(last / first, 1.0 / (discs - 1));
+                k = (float)trig.Pow(last / first, 1.0 / (discs - 1));
             }
 
             float d = first;
             for (int i = 0; i < discs; i++)
             {
-                if (i == discs - 1) d = last;           // the nose lands exactly on range
+                if (i == discs - 1) d = last;
                 list.Add(new Disc(ox + cos * d, oy + sin * d, d * s));
                 d *= k;
             }

@@ -1,6 +1,5 @@
 namespace ZTX.BioCirculation.Core
 {
-    // The decisions behind venting cargo from a crewless ship.
     public static class EjectRule
     {
         public static bool IsVentRequest(object source, object sink)

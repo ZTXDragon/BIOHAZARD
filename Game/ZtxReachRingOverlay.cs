@@ -10,7 +10,6 @@ using ZTX.BioCirculation.Core;
 
 namespace ZTX.BioCirculation.Game
 {
-    // Build-mode ring showing how far a hauling organ reaches (2026-09-26).
     internal sealed class ZtxReachRingOverlay : IBlueprintOverlayRenderer
     {
         private struct Ring
@@ -44,8 +43,6 @@ namespace ZTX.BioCirculation.Game
                 {
                     if (!(components[c] is ZtxHaulerRules hauler) || hauler.ReachRingLine == null) continue;
 
-                    // Blueprint buffs if the part is on the blueprint, the authored base if it is
-                    // only a ghost at the cursor (GetValue is null-safe).
                     float radius = ReachRing.Tiles(hauler.Range.GetValue(data.Part, 1f));
                     int segments = ReachRing.SegmentCount(radius);
                     if (segments == 0 || !_seen.Add(data.Info.Rect)) continue;

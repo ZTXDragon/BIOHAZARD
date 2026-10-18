@@ -17,12 +17,49 @@ using Vector2 = Halfling.Geometry.Vector2;
 
 namespace ZTX.BioCirculation.Game
 {
-    // Drives resource hauling for one ship: every ZtxHauler picks up one job's worth of cargo per
-    // cycle and hands it to the beam as a nugget.
     internal class ZtxHaulManager : ShipComponent
     {
         private static readonly ConditionalWeakTable<Ship, ZtxHaulManager> s_managers =
             new ConditionalWeakTable<Ship, ZtxHaulManager>();
+
+        internal static ZtxHaulManager Find(Ship ship)
+        {
+            return ship != null && s_managers.TryGetValue(ship, out ZtxHaulManager m) ? m : null;
+        }
+
+        internal void TraceState(ref TraceHash h)
+        {
+            h.Add(_haulers.Count).Add(_supplyTickCounter);
+            for (int i = 0; i < _haulers.Count; i++)
+            {
+                ZtxHauler o = _haulers[i];
+                if (o == null) { h.Add(-1); continue; }
+                o.TraceState(ref h);
+            }
+            h.Add(_cargo.Count);
+            foreach (KeyValuePair<Nugget, CargoTag> kv in _cargo)
+            {
+                Nugget n = kv.Key;
+                CargoTag t = kv.Value;
+                h.Add(n.UniqueID.ToString()).Add(n.Quantity)
+                 .Add(n.DetWorldLocation.X).Add(n.DetWorldLocation.Y)
+                 .Add(ZtxDesyncTrace.JobKey(t.Job)).Add(t.FailedPasses);
+            }
+            h.Add(_filedSupplyJobs.Count);
+            for (int i = 0; i < _filedSupplyJobs.Count; i++) h.Add(ZtxDesyncTrace.JobKey(_filedSupplyJobs[i]));
+            h.Add(_filedChainJobs.Count);
+            for (int i = 0; i < _filedChainJobs.Count; i++) h.Add(ZtxDesyncTrace.JobKey(_filedChainJobs[i]));
+            h.Add(_candidates.Count);
+            for (int i = 0; i < _candidates.Count; i++) h.Add(ZtxDesyncTrace.JobKey(_candidates[i]));
+            h.Add(_nuggetJobs.Count);
+            for (int i = 0; i < _nuggetJobs.Count; i++) h.Add(ZtxDesyncTrace.JobKey(_nuggetJobs[i]));
+        }
+
+        internal string TraceCounts()
+        {
+            return "organs=" + _haulers.Count + " cargo=" + _cargo.Count + " filed=" + _filedSupplyJobs.Count +
+                   "+" + _filedChainJobs.Count + " cand=" + _candidates.Count + " nuggetjobs=" + _nuggetJobs.Count;
+        }
 
         private readonly List<ZtxHauler> _haulers = new List<ZtxHauler>();
         private ZtxHauler[] _snapshot = new ZtxHauler[0];
@@ -53,7 +90,20 @@ namespace ZTX.BioCirculation.Game
 
         private readonly List<ResourceTransferJob> _filedChainJobs = new List<ResourceTransferJob>();
 
-        // Where one of OUR nuggets was meant to go, and where it came from.
+        internal bool HasLiveConstructionSupply(MPValueType valueType, bool pendingPickupOnly)
+        {
+            for (int i = 0; i < _filedSupplyJobs.Count; i++)
+            {
+                ResourceTransferJob job = _filedSupplyJobs[i];
+                if (job?.Sink == null) continue;
+                int floor = pendingPickupOnly ? job.ResourcesInHand : 0;
+                if (job.ResourcesRequested.GetValue(valueType) > floor && job.Sink.IsConstructionSink &&
+                    !job.GetFinished(valueType, checkSourceValid: true))
+                    return true;
+            }
+            return false;
+        }
+
         private sealed class CargoTag
         {
             public ResourceTransferJob Job;
@@ -169,8 +219,6 @@ namespace ZTX.BioCirculation.Game
 
             if (_orderDirty)
             {
-                // Grid location, the engine's own deterministic part key. Registration order is
-                // part ATTACH order, and List.Remove shifts every later index.
                 _haulers.Sort(CompareByLocation);
                 _orderDirty = false;
             }
@@ -181,7 +229,7 @@ namespace ZTX.BioCirculation.Game
                 MaintainCargo();
                 if (AnyHaulerServesConstruction())
                 {
-                    _supplyJobsThisWindow += ZtxConstructionSupply.Update(base.Ship, _filedSupplyJobs);
+                    _supplyJobsThisWindow += ZtxConstructionSupply.Update(base.Ship, _filedSupplyJobs, this);
                 }
                 _supplyJobsThisWindow += ZtxChainSupply.Update(base.Ship, _filedChainJobs);
             }
@@ -207,7 +255,6 @@ namespace ZTX.BioCirculation.Game
             {
                 ZtxHauler h = _snapshot[i];
                 if (h?.Part == null) continue;
-                // A ship split reuses the SAME Part instances across both halves.
                 if (!ReferenceEquals(h.Part.Ship, base.Ship)) continue;
 
                 int moved = h.Tick(seconds, this);
@@ -317,6 +364,8 @@ namespace ZTX.BioCirculation.Game
                 }
                 if (refiled != null)
                 {
+                    ZtxDesyncTrace.Event(ship, "refile cargo nugget#" + n.UniqueID + " " + route.Trim() + " " +
+                                         ZtxDesyncTrace.JobText(refiled));
                     tag.Job = refiled;
                     tag.LoggedParked = false;
                     tag.FailedPasses = 0;
@@ -383,8 +432,6 @@ namespace ZTX.BioCirculation.Game
             {
                 if (job?.Source == null || job.Sink == null) continue;
 
-                // Nugget-sourced jobs are the stock beam's own work; taking them here would
-                // pointlessly re-wrap a nugget that is already in flight.
                 if (job.Source is Nugget) continue;
 
                 if (job.ResourcesRequested.Confirmed - job.ResourcesInHand <= 0) continue;
@@ -399,15 +446,35 @@ namespace ZTX.BioCirculation.Game
                 _candidates.Add(job);
             }
 
-            // GetTransferJobsFor documents its own order as NOT deterministic — it is backed by a
-            // weak table. Two multiplayer peers picking different jobs would desync, so sort.
             if (_candidates.Count > 1) _candidates.Sort(CompareJobs);
+        }
+
+        internal static bool ServesConstruction(Ship ship)
+        {
+            return ship != null
+                && s_managers.TryGetValue(ship, out ZtxHaulManager m)
+                && m.AnyHaulerServesConstruction();
         }
 
         private bool AnyHaulerServesConstruction()
         {
             for (int i = 0; i < _haulers.Count; i++)
                 if (_haulers[i] != null && _haulers[i].Rules.ServeConstruction) return true;
+            return false;
+        }
+
+        internal bool AnyBuilderCovers(Vector2 source, Vector2 sink)
+        {
+            for (int i = 0; i < _haulers.Count; i++)
+            {
+                ZtxHauler h = _haulers[i];
+                if (h?.Part == null || !h.Rules.ServeConstruction || !h.IsUsable) continue;
+                if (!ReferenceEquals(h.Part.Ship, base.Ship)) continue;
+                Vector2 here = h.Part.LocalCenter;
+                if (SupplyRule.Covers(here.X, here.Y, h.RangeTiles,
+                                      source.X, source.Y, sink.X, sink.Y))
+                    return true;
+            }
             return false;
         }
 
@@ -420,8 +487,7 @@ namespace ZTX.BioCirculation.Game
                 if (h == null) continue;
 
                 ResourceTransferJob c = h.Claim;
-                // Drop a claim the organ can no longer act on, so the job returns to the pool.
-                if (c == null || !IsServiceable(c) || !h.CanReach(c))
+                if (c == null || !h.IsUsable || !IsServiceable(c) || !h.CanReach(c))
                 {
                     h.SetClaim(null);
                     continue;
@@ -440,7 +506,7 @@ namespace ZTX.BioCirculation.Game
         public ResourceTransferJob FindJobFor(ZtxHauler hauler)
         {
             ResourceTransferJob held = hauler.Claim;
-            if (held != null && IsServiceable(held)) return held;
+            if (held != null && IsServiceable(held) && ZtxHauler.NettedRoom(held) > 0) return held;
 
             for (int i = 0; i < _candidates.Count; i++)
             {
@@ -449,6 +515,7 @@ namespace ZTX.BioCirculation.Game
                 if (_claimed.Contains(job)) continue;
                 if (job.Sink.IsConstructionSink && !hauler.Rules.ServeConstruction) continue;
                 if (!hauler.CanReach(job)) continue;
+                if (ZtxHauler.NettedRoom(job) <= 0) continue;
 
                 hauler.SetClaim(job);
                 _claimed.Add(job);
@@ -503,7 +570,8 @@ namespace ZTX.BioCirculation.Game
                 if (h == null) continue;
 
                 Part c = h.RepairClaim;
-                if (c == null || c.IsDestroyed || !_repairSites.Contains(c) || !h.InRange(c))
+                if (c == null || !h.IsUsable || !h.CanRepair || c.IsDestroyed ||
+                    !_repairSites.Contains(c) || !h.InRange(c))
                 {
                     h.SetRepairClaim(null);
                     continue;
@@ -541,8 +609,8 @@ namespace ZTX.BioCirculation.Game
                 if (h == null) continue;
 
                 Part c = h.BuildClaim;
-                if (c == null || !c.IsUnderConstruction || !ReferenceEquals(c.Ship, base.Ship) ||
-                    !h.InRange(c))
+                if (c == null || !h.IsUsable || !h.CanBuild || !c.IsUnderConstruction ||
+                    !ReferenceEquals(c.Ship, base.Ship) || !h.InRange(c))
                 {
                     h.SetBuildClaim(null);
                     continue;
@@ -551,15 +619,22 @@ namespace ZTX.BioCirculation.Game
             }
         }
 
+        private static bool HasBuildWork(Part site)
+        {
+            PartConstructionTracker tracker = PartConstructionTracker.GetConstructionTracker(site);
+            return tracker != null && tracker.Progress < tracker.MaxProgress;
+        }
+
         public Part FindBuildSiteFor(ZtxHauler hauler)
         {
             Part held = hauler.BuildClaim;
-            if (held != null && held.IsUnderConstruction) return held;
+            if (held != null && held.IsUnderConstruction && HasBuildWork(held)) return held;
 
             for (int i = 0; i < _buildSites.Count; i++)
             {
                 Part site = _buildSites[i];
                 if (site == null || _claimedSites.Contains(site)) continue;
+                if (!HasBuildWork(site)) continue;
                 if (!hauler.InRange(site)) continue;
 
                 hauler.SetBuildClaim(site);
@@ -581,7 +656,6 @@ namespace ZTX.BioCirculation.Game
             for (int i = 0; i < _haulers.Count && !anyMiner; i++)
                 anyMiner = _haulers[i] != null && _haulers[i].CanMine;
 
-            // Deconstruction orders — the ones the player queues on their own hull.
             ConstructionManager cm = ship.OptionalConstructionManager;
             if (cm != null)
             {
@@ -590,12 +664,10 @@ namespace ZTX.BioCirculation.Game
                 {
                     QueuedPartDeconstruction q = queued[i];
                     if (q?.SalvageJob == null) continue;
-                    // Deconstruction is always our own hull, so external is never in play here.
                     if (IsSalvageable(q.SalvageJob, ship, false)) _salvageJobs.Add(q.SalvageJob);
                 }
             }
 
-            // Plain salvage marks on our own parts (wrecks, captured hulks still attached).
             foreach (SalvageJob job in ship.Resources.GetSalvageJobs(MPValueType.Confirmed))
             {
                 if (!IsSalvageable(job, ship, anyMiner)) continue;
@@ -615,7 +687,8 @@ namespace ZTX.BioCirculation.Game
                 if (h == null) continue;
 
                 SalvageJob c = h.SalvageClaim;
-                if (c == null || !IsSalvageable(c, base.Ship, h.CanMine) || !h.InRange(c.SalvagePart))
+                if (c == null || !h.IsUsable || !h.CanSalvage || !IsSalvageable(c, base.Ship, h.CanMine) ||
+                    !h.InRange(c.SalvagePart))
                 {
                     h.SetSalvageClaim(null);
                     continue;
@@ -746,8 +819,6 @@ namespace ZTX.BioCirculation.Game
             if (!h.CanCarry) return 0;
             if (!h.IsUsable)
             {
-                // No tick moves the tips while the organ is unusable, so a Homing or Holding flag left set
-                // would hold the drawn arm on a frozen tip. Drop it: the arm goes back to idle.
                 ArmTipSlot[] idle = h.Slots;
                 for (int i = 0; i < idle.Length; i++) { idle[i].Homing = false; idle[i].Holding = false; }
                 return 0;
@@ -786,7 +857,6 @@ namespace ZTX.BioCirculation.Game
             {
                 ArmTipSlot slot = slots[i];
 
-                // This slot's home: the paired arm's rest point (slot i renders on arm i).
                 Vector2 restLocal;
                 if (vt == null || !vt.TryGetRestTipLocal(i, out restLocal))
                     restLocal = self.LocalCenter;
@@ -799,8 +869,6 @@ namespace ZTX.BioCirculation.Game
                 }
                 slot.PrevTip = slot.Tip;
 
-                // The tip belongs to an arm attached to the hull: advect it with the ship
-                // so every tip speed below is ship-relative.
                 if (shipBody != null)
                     slot.Tip += (Vector2)shipBody.GetLinearVelocityFromWorldPoint(slot.Tip) * cdt;
 
@@ -816,11 +884,11 @@ namespace ZTX.BioCirculation.Game
                         Nugget cn = (Nugget)cand.Source;
                         Vector2 local = ship.DetTransformPointFromWorld(cn.DetWorldLocation);
                         if (self.LocalCenter.DistanceSquaredTo(local) > rangeSq) continue;
-                        // Sink end: Sink.Center is ship-local (same ship, proven by
-                        // IsCarryable); never Sink.Part — null for construction sinks.
                         if (self.LocalCenter.DistanceSquaredTo(cand.Sink.Center) > rangeSq) continue;
 
                         slot.Job = cand;
+                        ZtxDesyncTrace.Event(ship, "adopt organ@" + ZtxDesyncTrace.Loc(self) + " slot=" + i +
+                                             " " + ZtxDesyncTrace.JobText(cand));
                         slot.Reaching = true;
                         slot.Holding = false;
                         _claimedCarries.Add(cand);
@@ -849,8 +917,6 @@ namespace ZTX.BioCirculation.Game
                 ResourceTransferJob job = slot.Job;
                 if (!IsCarryable(job, ship))
                 {
-                    // Same mid-drag death as in RefreshCarries: never leave drag velocity
-                    // on a dropped nugget.
                     if (job.Source is Nugget dead && dead.Sim != null)
                         dead.LinearVelocity = Vector2.Zero;
                     ReleaseSlot(slot);
@@ -869,8 +935,6 @@ namespace ZTX.BioCirculation.Game
 
                 if (slot.Reaching)
                 {
-                    // Reach: the tip closes on the (stationary) nugget at GrabSpeed. The
-                    // cargo does not move until the tip is on it.
                     MoveTip(slot, nugget.DetWorldLocation, grab * cdt);
                     if ((nugget.DetWorldLocation - slot.Tip).Length <= GrabDistance)
                         slot.Reaching = false;
@@ -889,7 +953,6 @@ namespace ZTX.BioCirculation.Game
 
                 if ((target - slot.Tip).Length > CarryDeliverDistance) continue;
 
-                // Arrived. Deliver what the job still wants and the sink will take.
                 nugget.LinearVelocity = Vector2.Zero;
                 int want = job.ResourcesRequested.Confirmed - job.ResourcesInHand;
                 if (want > nugget.Quantity) want = nugget.Quantity;
@@ -898,6 +961,8 @@ namespace ZTX.BioCirculation.Game
                 int received = sink.ReceiveResources(job.ResourceType, want, false, false);
                 if (received >= nugget.Quantity)
                 {
+                    ZtxDesyncTrace.Event(ship, "deliver organ@" + ZtxDesyncTrace.Loc(self) + " slot=" + i +
+                                         " " + received + " (nugget emptied) " + ZtxDesyncTrace.JobText(job));
                     job.Cancel();
                     ForgetCargo(nugget);
                     nugget.SubtractResources(received);
@@ -905,8 +970,8 @@ namespace ZTX.BioCirculation.Game
                 }
                 else if (received >= want)
                 {
-                    // Sink took everything we asked; the nugget holds more than the job
-                    // wanted. Shrink and keep working it next tick.
+                    ZtxDesyncTrace.Event(ship, "deliver organ@" + ZtxDesyncTrace.Loc(self) + " slot=" + i +
+                                         " " + received + " (nugget kept) " + ZtxDesyncTrace.JobText(job));
                     nugget.SubtractResources(received);
                     job.Cancel(received, false);
                     delivered += received;
@@ -917,6 +982,8 @@ namespace ZTX.BioCirculation.Game
                         Log.Info("carry choke: " + ZtxHaulDebug.Sink(sink) + " took " +
                                  received + "/" + want + " " + job.ResourceType +
                                  " - job canceled, remainder stranded for re-route");
+                    ZtxDesyncTrace.Event(ship, "choke organ@" + ZtxDesyncTrace.Loc(self) + " slot=" + i +
+                                         " took " + received + "/" + want + " " + ZtxDesyncTrace.JobText(job));
                     if (received > 0)
                     {
                         nugget.SubtractResources(received);

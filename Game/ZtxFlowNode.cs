@@ -4,10 +4,10 @@ using Cosmoteer.Ships.Parts;
 using Cosmoteer.Ships.Parts.Logic;
 using Cosmoteer.Ships.Parts.Resources;
 using Halfling.Serialization.Generic;
+using ZTX.BioCirculation.Core;
 
 namespace ZTX.BioCirculation.Game
 {
-    // The live blood-movement component on a part.
     internal class ZtxFlowNode : PartComponent, IPartComponentValue
     {
         private BloodFlowManager _manager;
@@ -17,6 +17,9 @@ namespace ZTX.BioCirculation.Game
         private EventHandler<EventArgs> _onToggleChanged;
 
         private bool _joined;
+
+        private IPartComponentMode _pressureMode;
+        private IPartComponentMode _flowMode;
 
         public new ZtxFlowNodeRules Rules
         {
@@ -48,29 +51,17 @@ namespace ZTX.BioCirculation.Game
                 if (buffs == null) return 0f;
                 foreach (var kv in buffs)
                     if (kv.Key.BuffID == Rules.PMaxBuff) return kv.Value;
-                return 0f;   // buff not present at all = no heart reaching this part
+                return 0f;
             }
         }
 
-        public int EffectivePMax
-        {
-            get
-            {
-                if (Rules.PMax <= 0) return 0;
-                return (int)System.Math.Round(Rules.PMax * BuffScale);
-            }
-        }
+        public int PressurePercent => _pressureMode != null ? _pressureMode.Mode : 100;
 
-        public int EffectiveFlowRate
-        {
-            get
-            {
-                float scale = BuffScale;
-                if (scale <= 0f) return 0;
-                int r = (int)System.Math.Round(Rules.FlowRate * scale);
-                return r < 1 ? 1 : r;
-            }
-        }
+        public int FlowPercent => _flowMode != null ? _flowMode.Mode : 100;
+
+        public int EffectivePMax => PumpStrength.PMax(Rules.PMax, BuffScale, PressurePercent);
+
+        public int EffectiveFlowRate => PumpStrength.FlowRate(Rules.FlowRate, BuffScale, FlowPercent);
 
         public bool HasBackingStorage => _storage != null;
 
@@ -120,14 +111,14 @@ namespace ZTX.BioCirculation.Game
                    " vol=" + Volume + "/" + EffectiveCapacity +
                    (_storage != null ? " [live]" : " [private]") +
                    " net=" + Rules.Network + " decay=" + Rules.PressureDecay +
-                   (Rules.PMax > 0 ? " PMax=" + Rules.PMax : "");
+                   (Rules.PMax > 0 ? " PMax=" + Rules.PMax : "") +
+                   (_pressureMode != null ? " pressure=" + PressurePercent + "%" : "") +
+                   (_flowMode != null ? " flow=" + FlowPercent + "%" : "");
         }
 
         public override void OnPartAttached()
         {
             base.OnPartAttached();
-            // Bind the backing storage before registering, so the first graph build already
-            // reads real blood levels rather than zeroes.
             if (Rules.Storage != default(Cosmoteer.Data.ID<PartComponentRules>))
             {
                 base.Part.TryGetComponent<ISimpleResourceStorage>(Rules.Storage, out _storage);
@@ -151,8 +142,21 @@ namespace ZTX.BioCirculation.Game
                 }
             }
 
+            _pressureMode = ResolveMode(Rules.PressureToggle, "PressureToggle");
+            _flowMode = ResolveMode(Rules.FlowToggle, "FlowToggle");
+
             _manager = BloodFlowManager.GetOrCreate(base.Ship);
             SyncMembership();
+        }
+
+        private IPartComponentMode ResolveMode(Cosmoteer.Data.ID<PartComponentRules> id, string field)
+        {
+            if (id == default(Cosmoteer.Data.ID<PartComponentRules>)) return null;
+            base.Part.TryGetComponent<IPartComponentMode>(id, out IPartComponentMode mode);
+            if (mode == null)
+                Log.Error("FlowNode on " + base.Part + " declares " + field + "=" + id +
+                          " but no such IPartComponentMode exists on the part; it runs at 100%.");
+            return mode;
         }
 
         private void SyncMembership()
@@ -168,10 +172,12 @@ namespace ZTX.BioCirculation.Game
         {
             if (_toggle != null && _onToggleChanged != null)
             {
-                _toggle.ToggleChanged -= _onToggleChanged;   // the part outlives the event otherwise
+                _toggle.ToggleChanged -= _onToggleChanged;
             }
             _onToggleChanged = null;
             _toggle = null;
+            _pressureMode = null;
+            _flowMode = null;
             if (_joined) _manager?.Deregister(this);
             _joined = false;
             _manager = null;

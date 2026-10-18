@@ -4,7 +4,6 @@ using Cosmoteer.Ships.Parts.Logic;
 
 namespace ZTX.BioCirculation.Game
 {
-    // ON while a brain's consciousness radius reaches this part.
     internal class ZtxConscious : PartComponent, IPartComponentToggle, IComponentToggleProvider
     {
         private ZtxBrainManager _manager;

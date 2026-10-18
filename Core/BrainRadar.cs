@@ -2,8 +2,6 @@ using System.Collections.Generic;
 
 namespace ZTX.BioCirculation.Core
 {
-    // How far a ship's brains reach on radar (2026-09-26, ZTX: "add a radar with scaling to brain
-    // parts where a single big brain has a large radar but multiple small brains do not stack").
     public static class BrainRadar
     {
         public static float ClusterRadius(int tiles, IReadOnlyList<float> curveTiles, IReadOnlyList<float> curveRadar)
@@ -14,7 +12,6 @@ namespace ZTX.BioCirculation.Core
             if (n == 1 || tiles <= curveTiles[0]) return curveRadar[0] > 0f ? curveRadar[0] : 0f;
             if (tiles >= curveTiles[n - 1]) return curveRadar[n - 1] > 0f ? curveRadar[n - 1] : 0f;
 
-            // The segment that holds `tiles`; the checks above guarantee one exists.
             int seg = n - 2;
             for (int i = 1; i < n; i++)
             {

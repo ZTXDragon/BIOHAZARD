@@ -6,7 +6,6 @@ using Halfling.Serialization;
 
 namespace ZTX.BioCirculation.Game
 {
-    // Rules for ZtxHealNode — a part that spends banked ztx.healing to repair itself.
     [ReflectiveSerialization(Explicit = true)]
     [ReflectivePortableHashing(Explicit = true)]
     [SerialDerivedType(TypeName = "ZtxHealNode")]

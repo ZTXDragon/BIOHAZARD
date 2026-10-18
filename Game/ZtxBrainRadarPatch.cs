@@ -4,7 +4,6 @@ using HarmonyLib;
 
 namespace ZTX.BioCirculation.Game
 {
-    // Brains give radar (2026-09-26).
     [HarmonyPatch(typeof(SensorManager), nameof(SensorManager.RadarRadius), MethodType.Getter)]
     internal static class ZtxBrainRadarPatch
     {

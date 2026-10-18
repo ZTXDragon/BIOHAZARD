@@ -2,8 +2,6 @@ using System.Collections.Generic;
 
 namespace ZTX.BioCirculation.Core
 {
-    // Splits a limited amount evenly between consumers (2026-09-25, ZTX: "i need the biomass to be
-    // spread evenly across all biomass parts that use it like factory, thrusters and bone
     public static class FairShare
     {
         public static int Allocate(int available, IReadOnlyList<int> wants, int start, int[] result)
@@ -23,7 +21,6 @@ namespace ZTX.BioCirculation.Core
                 int share = available / hungry;
                 if (share == 0)
                 {
-                    // Fewer units than hungry consumers: one each from the rotation start.
                     int first = ((start % n) + n) % n;
                     for (int k = 0; k < n && available > 0; k++)
                     {

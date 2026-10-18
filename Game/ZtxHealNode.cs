@@ -3,10 +3,10 @@ using Cosmoteer.Ships.Parts;
 using Cosmoteer.Ships.Parts.Logic;
 using Cosmoteer.Ships.Parts.Resources;
 using Halfling.Serialization.Generic;
+using ZTX.BioCirculation.Core;
 
 namespace ZTX.BioCirculation.Game
 {
-    // A part that repairs itself by spending banked healing energy.
     internal class ZtxHealNode : PartComponent
     {
         private ISimpleResourceStorage _storage;
@@ -17,6 +17,8 @@ namespace ZTX.BioCirculation.Game
         private float _cooldown;
 
         private int _hpCredit;
+
+        public int HpCredit => _hpCredit;
 
         public new ZtxHealNodeRules Rules
         {
@@ -75,10 +77,13 @@ namespace ZTX.BioCirculation.Game
         {
             if (_toggle != null && !_toggle.IsToggleOn) return 0;
 
+            Part salvaged = base.Part;
+            if (salvaged != null && !HealGate.MayHeal(hasBrain: true, salvageDamage: salvaged.SalvageDamage)) return 0;
+
             _cooldown -= seconds;
             if (_cooldown > 0f) return 0;
             _cooldown += Rules.HealInterval > 0f ? Rules.HealInterval : 1.0f;
-            if (_cooldown < 0f) _cooldown = 0f;      // never bank a burst up after a long stall
+            if (_cooldown < 0f) _cooldown = 0f;
 
             Part p = base.Part;
             if (p == null || _storage == null) return 0;
@@ -91,12 +96,10 @@ namespace ZTX.BioCirculation.Game
             int wanted = Rules.MaxHpPerCycle > 0 ? Rules.MaxHpPerCycle : deficit;
             if (wanted > deficit) wanted = deficit;
 
-            // Buy whole units only while the credit cannot cover this cycle. The leftover stays
-            // as credit, so a 30 HP top-up no longer burns a whole 200 HP unit.
             int perUnit = Rules.HpPerUnit > 0 ? Rules.HpPerUnit : 1;
             while (_hpCredit < wanted)
             {
-                if (Spend(1) <= 0) break;            // bank empty
+                if (Spend(1) <= 0) break;
                 _hpCredit += perUnit;
             }
 
@@ -138,8 +141,6 @@ namespace ZTX.BioCirculation.Game
         {
             base.OnPartAttached();
 
-            // TryGetComponent, never GetComponent: the latter throws on a missing or wrong-typed
-            // component, and a rules typo should be a log line rather than a crash at part spawn.
             base.Part.TryGetComponent<ISimpleResourceStorage>(Rules.Storage, out _storage);
             if (_storage == null)
             {

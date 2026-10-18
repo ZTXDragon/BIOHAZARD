@@ -2,7 +2,6 @@ using System.Collections.Generic;
 
 namespace ZTX.BioCirculation.Core
 {
-    // Works out which maw tiles a digestion batch comes from BEFORE any tile is changed.
     public static class DigestPlan
     {
         public static bool PlanTake(IReadOnlyList<int> tileQuantities, int need, IList<int> takes)
@@ -27,7 +26,7 @@ namespace ZTX.BioCirculation.Core
 
             if (remaining > 0)
             {
-                takes.Clear();      // nothing is touched unless the whole batch is covered
+                takes.Clear();
                 return false;
             }
             return true;

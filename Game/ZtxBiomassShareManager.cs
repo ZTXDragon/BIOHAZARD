@@ -11,11 +11,26 @@ using ZTX.BioCirculation.Core;
 
 namespace ZTX.BioCirculation.Game
 {
-    // Splits each biomass network evenly between the parts that burn it (2026-09-25).
     internal class ZtxBiomassShareManager : ShipComponent
     {
         private static readonly ConditionalWeakTable<Ship, ZtxBiomassShareManager> s_managers =
             new ConditionalWeakTable<Ship, ZtxBiomassShareManager>();
+
+        internal static ZtxBiomassShareManager Find(Ship ship)
+        {
+            return ship != null && s_managers.TryGetValue(ship, out ZtxBiomassShareManager m) ? m : null;
+        }
+
+        internal void TraceState(ref TraceHash h)
+        {
+            h.Add(_intakes.Count).Add(_windowTicks).Add(_windowCycles).Add(_shortCycles);
+            for (int i = 0; i < _intakes.Count; i++)
+            {
+                ZtxBiomassIntake k = _intakes[i];
+                if (k?.Part == null) { h.Add(-1); continue; }
+                h.Add(k.Part.Location.X).Add(k.Part.Location.Y).Add(k.Want);
+            }
+        }
 
         private readonly List<ZtxBiomassIntake> _intakes = new List<ZtxBiomassIntake>();
         private bool _orderDirty = true;
@@ -28,8 +43,6 @@ namespace ZTX.BioCirculation.Game
         private int[] _wants = new int[0];
         private int[] _shares = new int[0];
 
-        // Diagnostics over a ~10 s window: what each consumer got, and how often the network
-        // could not cover every request. That is the line to read to see the split working.
         private int _windowTicks;
         private int _windowCycles;
         private int _shortCycles;
@@ -39,8 +52,6 @@ namespace ZTX.BioCirculation.Game
 
         public ZtxBiomassShareManager()
         {
-            // A DECLARED constant - FixedUpdateBuckets.GetBucketName throws on any undeclared
-            // bucket int, and it is reachable from the multiplayer out-of-sync handler.
             base.FixedUpdateBucket = FixedUpdateBuckets.Timers;
             base.FixedUpdatingEnabled = true;
         }
@@ -54,8 +65,6 @@ namespace ZTX.BioCirculation.Game
             ZtxBiomassShareManager captured = manager;
             Ship capturedShip = ship;
 
-            // Same attach rule as every manager here: a ship's Sim is null while its parts attach
-            // from a save, and deferring in that window silently drops the add.
             if (ship.Sim != null)
             {
                 ship.Sim.EnqueueDeterministic(ship.UniqueID, delegate
@@ -118,8 +127,6 @@ namespace ZTX.BioCirculation.Game
         {
             if (_orderDirty)
             {
-                // Grid location, the engine's own deterministic part key; registration order is
-                // attach order and shifts whenever a part is destroyed and rebuilt.
                 _intakes.Sort(CompareByLocation);
                 _orderDirty = false;
             }
@@ -128,8 +135,6 @@ namespace ZTX.BioCirculation.Game
             if (_snapshot.Length < count) _snapshot = new ZtxBiomassIntake[count * 2];
             _intakes.CopyTo(0, _snapshot, 0, count);
 
-            // Group ready intakes by network, keeping first-seen (location) order so the groups
-            // are always served in the same sequence.
             _networkOrder.Clear();
             foreach (List<ZtxBiomassIntake> list in _byNetwork.Values) list.Clear();
             for (int i = 0; i < count; i++)
@@ -154,7 +159,6 @@ namespace ZTX.BioCirculation.Game
             }
             if (shortThisCycle) _shortCycles++;
 
-            // Networks that vanished (a split, a severed pipe) must not keep their lists forever.
             if (_byNetwork.Count > _networkOrder.Count * 2 + 8)
             {
                 var stale = new List<object>();
@@ -182,8 +186,6 @@ namespace ZTX.BioCirculation.Game
             }
             if (wanted <= 0) return false;
 
-            // Every intake in the group reads the same network, so any one of them can report
-            // what it holds and pull from it.
             int available = group[0].Available;
             int planned = FairShare.Allocate(available, new ArraySegment<int>(_wants, 0, n),
                                              cycle & 0x7FFFFFFF, _shares);

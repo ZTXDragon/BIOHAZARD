@@ -5,7 +5,6 @@ using Cosmoteer.Ships.Parts.Resources;
 
 namespace ZTX.BioCirculation.Game
 {
-    // Hands this part's banked healing energy to the damaged bio parts around it.
     internal class ZtxHealDistributor : PartComponent
     {
         private ISimpleResourceStorage _storage;
@@ -36,8 +35,6 @@ namespace ZTX.BioCirculation.Game
             if (!IsUsable) return false;
             _cooldown -= seconds;
             if (_cooldown > 0f) return false;
-            // Set from the authored interval rather than accumulated, so a long frame cannot
-            // bank up several cycles and dump them at once.
             _cooldown = Rules.Interval > 0f ? Rules.Interval : 0.1f;
             return Bank > 0;
         }
@@ -68,8 +65,6 @@ namespace ZTX.BioCirculation.Game
         {
             base.OnPartAttached();
 
-            // TryGetComponent, never GetComponent: the latter throws on a missing or wrong-typed
-            // component, and a rules typo should be a log line rather than a crash at part spawn.
             base.Part.TryGetComponent<ISimpleResourceStorage>(Rules.Storage, out _storage);
             if (_storage == null)
             {

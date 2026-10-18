@@ -15,12 +15,40 @@ using ZTX.BioCirculation.Core;
 
 namespace ZTX.BioCirculation.Game
 {
-    // Brain-cluster manager for one ship: finds contiguous blobs of modular brain blocks and turns
-    // blob size into a NON-LINEAR command-point bonus.
     internal class ZtxBrainManager : ShipComponent
     {
         private static readonly ConditionalWeakTable<Ship, ZtxBrainManager> s_managers =
             new ConditionalWeakTable<Ship, ZtxBrainManager>();
+
+        internal static ZtxBrainManager Find(Ship ship)
+        {
+            return ship != null && s_managers.TryGetValue(ship, out ZtxBrainManager m) ? m : null;
+        }
+
+        internal static bool HasBrainAboard(Ship ship)
+        {
+            ZtxBrainManager m = Find(ship);
+            if (m == null) return false;
+            for (int i = 0; i < m._brains.Count; i++)
+            {
+                Part p = m._brains[i]?.Part;
+                if (p != null && ReferenceEquals(p.Ship, ship)) return true;
+            }
+            return false;
+        }
+
+        internal void TraceState(ref TraceHash h)
+        {
+            h.Add(_brains.Count).Add(_dirty).Add(_clusterSizes.Count);
+            for (int i = 0; i < _clusterSizes.Count; i++) h.Add(_clusterSizes[i]);
+            h.Add(_gates.Count);
+            for (int i = 0; i < _gates.Count; i++)
+            {
+                ZtxConscious g = _gates[i];
+                if (g?.Part == null) { h.Add(-1); continue; }
+                h.Add(g.Part.Location.X).Add(g.Part.Location.Y).Add(g.IsToggleOn);
+            }
+        }
 
         private readonly List<ZtxBrainNode> _brains = new List<ZtxBrainNode>();
 
@@ -73,8 +101,6 @@ namespace ZTX.BioCirculation.Game
 
         public ZtxBrainManager()
         {
-            // A DECLARED constant (FixedUpdateBuckets.GetBucketName throws on invented
-            // ints, reachable from the MP desync handler) and a SEQUENTIAL bucket.
             base.FixedUpdateBucket = FixedUpdateBuckets.Timers;
             base.FixedUpdatingEnabled = true;
         }
@@ -88,8 +114,6 @@ namespace ZTX.BioCirculation.Game
             ZtxBrainManager captured = manager;
             Ship capturedShip = ship;
 
-            // Same Sim-null branch as every other manager in this DLL: a ship's Sim is
-            // null while parts attach, and EnqueueDeterministic silently drops there.
             if (ship.Sim != null)
             {
                 ship.Sim.EnqueueDeterministic(ship.UniqueID, delegate
@@ -147,7 +171,6 @@ namespace ZTX.BioCirculation.Game
             ship.BlueprintParts.PartRemoved += _onBpRemoved;
             RecomputeBlueprintBonus(ship);
 
-            // Any part joining or leaving the hull changes who is in range of what.
             _onPartAdded = delegate (Part pp) { _dirty = true; };
             _onPartRemoved = delegate (Part pp) { _dirty = true; };
             ship.Parts.PartAdded += _onPartAdded;
@@ -162,8 +185,6 @@ namespace ZTX.BioCirculation.Game
                 Ship ship = base.Ship;
                 if (ship?.BlueprintParts == null) return;
                 RecomputeBlueprintBonus(ship);
-                // The range ring is drawn from this same layout - a brain appearing,
-                // moving or vanishing changes where control ends.
                 _ringsStale = true;
             }
             catch (Exception ex)
@@ -180,7 +201,6 @@ namespace ZTX.BioCirculation.Game
             return null;
         }
 
-        // One cluster of the BLUEPRINT brain layout.
         private struct BlueprintCluster
         {
             public List<Vector2> Centers;
@@ -269,7 +289,7 @@ namespace ZTX.BioCirculation.Game
             if (!Config.Enabled) return;
             if (!_dirty) return;
             Ship ship = base.Ship;
-            if (ship?.Sim == null) return;   // stay dirty; retry when the sim is live
+            if (ship?.Sim == null) return;
             _dirty = false;
 
             long rebuildStart = ZtxPerfProbe.Mark();
@@ -295,9 +315,8 @@ namespace ZTX.BioCirculation.Game
             _clusterSizes.Clear();
             _clusterMembers.Clear();
             _clusterRadii.Clear();
-            _discs.Clear();          // cleared BEFORE the early return: no brains, no awake region
+            _discs.Clear();
 
-            // Drop stale registrations: a ship split re-parents the SAME Part instances.
             for (int i = _brains.Count - 1; i >= 0; i--)
             {
                 Part p = _brains[i]?.Part;
@@ -330,7 +349,7 @@ namespace ZTX.BioCirculation.Game
                     foreach (Part adj in ship.Parts.GetAdjacentParts(cur.Rect))
                     {
                         if (adj == null || visited.Contains(adj)) continue;
-                        if (!_byPart.ContainsKey(adj)) continue;   // not a brain block
+                        if (!_byPart.ContainsKey(adj)) continue;
                         visited.Add(adj);
                         queue.Enqueue(adj);
                     }
@@ -368,13 +387,11 @@ namespace ZTX.BioCirculation.Game
 
             foreach (Part part in ship.Parts)
             {
-                if (part == null || _byPart.ContainsKey(part)) continue;   // brains: always
+                if (part == null || _byPart.ContainsKey(part)) continue;
                 Vector2 c = part.LocalCenter;
                 if (!ConsciousnessRule.IsConscious(c.X, c.Y, _discs)) _nextUnconscious.Add(part);
             }
 
-            // Push the answer to the gates, dropping any that left this ship. A gate whose
-            // part moved to another ship is re-registered there by its own OnPartAttached.
             for (int i = _gates.Count - 1; i >= 0; i--)
             {
                 ZtxConscious g = _gates[i];
@@ -497,8 +514,6 @@ namespace ZTX.BioCirculation.Game
                         float ang = (k + 0.5f) * (6.2831853f / steps);
                         Vector2 pt = cm + Vector2.FromAngle(ang) * r;
 
-                        // Inside any OTHER block's circle (any cluster)? Then this arc is
-                        // interior, not boundary. Small epsilon keeps butt joints closed.
                         bool interior = false;
                         for (int j = 0; j < clusters.Count && !interior; j++)
                         {
@@ -515,7 +530,7 @@ namespace ZTX.BioCirculation.Game
                                 }
                             }
                         }
-                        if (!interior) _ringGeo.Add((pt, ang + 1.5707964f));   // tangent
+                        if (!interior) _ringGeo.Add((pt, ang + 1.5707964f));
                     }
                 }
             }
@@ -576,8 +591,6 @@ namespace ZTX.BioCirculation.Game
             if (bonus == _appliedBonus) return;
             int diff = bonus - _appliedBonus;
 
-            // LIVE tally: ship.Commands (control, CanExecuteCommands, flight HUD) — via
-            // the same interface real providers call; refreshes CanExecuteCommands itself.
             var commands = (CommandProvider.ICommandManagerMembers)ship.Commands;
             if (diff > 0) commands.OnCommandProviderOperational(diff);
             else commands.OnCommandProviderNonOperational(-diff);
@@ -606,7 +619,6 @@ namespace ZTX.BioCirculation.Game
                 }
                 if (_radar != 0f)
                 {
-                    // Same symmetry as the CP bonus: a manager leaving its ship takes its radar.
                     _radar = 0f;
                     ship?.Sensors?.ClearCaches();
                 }

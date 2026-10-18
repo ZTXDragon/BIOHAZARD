@@ -9,12 +9,32 @@ using ZTX.BioCirculation.Core;
 
 namespace ZTX.BioCirculation.Game
 {
-    // Drives self-repair for one ship: every ZtxHealNode that is damaged and has energy banked
-    // spends it on its own health each cycle.
     internal class BioHealManager : ShipComponent
     {
         private static readonly ConditionalWeakTable<Ship, BioHealManager> s_managers =
             new ConditionalWeakTable<Ship, BioHealManager>();
+
+        internal static BioHealManager Find(Ship ship)
+        {
+            return ship != null && s_managers.TryGetValue(ship, out BioHealManager m) ? m : null;
+        }
+
+        internal void TraceState(ref TraceHash h)
+        {
+            h.Add(_receivers.Count).Add(_distributors.Count);
+            for (int i = 0; i < _receivers.Count; i++)
+            {
+                Part p = _receivers[i]?.Part;
+                if (p == null) { h.Add(-1); continue; }
+                h.Add(p.Location.X).Add(p.Location.Y).Add(p.Health);
+            }
+            for (int i = 0; i < _distributors.Count; i++)
+            {
+                Part p = _distributors[i]?.Part;
+                if (p == null) { h.Add(-1); continue; }
+                h.Add(p.Location.X).Add(p.Location.Y);
+            }
+        }
 
         private readonly List<ZtxHealNode> _receivers = new List<ZtxHealNode>();
         private readonly List<ZtxHealDistributor> _distributors = new List<ZtxHealDistributor>();
@@ -29,6 +49,7 @@ namespace ZTX.BioCirculation.Game
 
         private bool _orderDirty = true;
         private int _tickCounter;
+        private bool _pausedNoBrain;
         private int _hpThisWindow;
         private int _unitsThisWindow;
 
@@ -104,7 +125,6 @@ namespace ZTX.BioCirculation.Game
 
                 _candidates.Clear();
                 _targets.Clear();
-                // Every ready distributor walks EVERY heal node on the ship, in range or not.
                 ZtxPerfProbe.Tally("heal distributor scans", 1);
                 ZtxPerfProbe.Tally("heal nodes checked by scans", _snapshotCount);
                 for (int i = 0; i < _snapshotCount; i++)
@@ -114,13 +134,12 @@ namespace ZTX.BioCirculation.Game
                     Part np = node.Part;
                     if (np == null || !ReferenceEquals(np.Ship, base.Ship)) continue;
 
+                    if (!HealGate.MayHeal(hasBrain: true, salvageDamage: np.SalvageDamage)) continue;
                     int room = node.BankRoom;
                     if (room <= 0) continue;
                     int missing = node.Deficit;
                     if (missing <= 0) continue;
-                    int hpPerUnit = node.Rules.HpPerUnit;
-                    int wanted = hpPerUnit > 0 ? (missing + hpPerUnit - 1) / hpPerUnit : room;
-                    if (wanted > room) wanted = room;
+                    int wanted = HealWant.Units(missing, node.HpCredit, node.Bank, room, node.Rules.HpPerUnit);
                     if (wanted <= 0) continue;
 
                     int maxHp = np.Rules.MaxHealth;
@@ -140,8 +159,6 @@ namespace ZTX.BioCirculation.Game
                                                     available, _candidates, _amounts);
                 if (allocated <= 0) continue;
 
-                // Withdraw first, deliver only what actually left the bank. The other order
-                // would mint energy whenever the storage returned less than was asked of it.
                 int drawn = dist.Withdraw(allocated);
                 int delivered = 0;
                 for (int i = 0; i < _targets.Count && delivered < drawn; i++)
@@ -152,8 +169,6 @@ namespace ZTX.BioCirculation.Game
                     delivered += _targets[i].Receive(give);
                 }
 
-                // Anything a receiver refused goes back, so a bank that filled between the scan
-                // and the hand-off cannot quietly destroy units.
                 if (delivered < drawn) dist.Refund(drawn - delivered);
                 _movedThisWindow += delivered;
             }
@@ -163,10 +178,17 @@ namespace ZTX.BioCirculation.Game
         {
             if (!Config.Enabled || _receivers.Count == 0) return;
 
+            bool hasBrain = ZtxBrainManager.HasBrainAboard(base.Ship);
+            if (hasBrain == _pausedNoBrain)
+            {
+                _pausedNoBrain = !hasBrain;
+                Log.Info("heal: " + (hasBrain ? "resumed, a brain is aboard" : "paused, no brain aboard") +
+                         " (" + _receivers.Count + " node(s))");
+            }
+            if (!hasBrain) return;
+
             if (_orderDirty)
             {
-                // Distributors are ordered the same way and for the same reason as the
-                // receivers below: who serves first must not depend on part attach order.
                 _distributors.Sort(CompareDistributorsByLocation);
                 _receivers.Sort(CompareByLocation);
                 _orderDirty = false;
@@ -190,8 +212,6 @@ namespace ZTX.BioCirculation.Game
                 if (node == null || !node.IsUsable) continue;
 
                 Part p = node.Part;
-                // A ship split reuses the SAME Part instances across both halves, so an
-                // ExistsInSim check alone would pass for a part that now belongs to the other ship.
                 if (p == null || !ReferenceEquals(p.Ship, base.Ship)) continue;
 
                 int before = node.Bank;

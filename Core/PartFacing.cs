@@ -1,6 +1,5 @@
 namespace ZTX.BioCirculation.Core
 {
-    // Pure logic behind the part-rotation toggle.
     public static class PartFacing
     {
         public static int QuarterTurns(int rotFlipBits)

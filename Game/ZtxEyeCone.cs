@@ -11,8 +11,6 @@ using ZTX.BioCirculation.Core;
 
 namespace ZTX.BioCirculation.Game
 {
-    // Directional sight: the eye reveals a CONE along its own facing instead of inflating the
-    // ship's sight circle.
     internal class ZtxEyeCone : PartComponent
     {
         private static readonly ID<PartCategory> CartilageCategory =
@@ -25,9 +23,6 @@ namespace ZTX.BioCirculation.Game
         private IComponentToggleProvider _toggle;
 
         private object[] _keys;
-
-        private ArcSpan _span;
-        private int _scannedAtPartCount = -1;
 
         public new ZtxEyeConeRules Rules
         {
@@ -63,7 +58,15 @@ namespace ZTX.BioCirculation.Game
             }
         }
 
-        public float OpenArcDegrees => _span.Width(Rules.ScanRays, (float)Rules.Arc * 180f / (float)Math.PI);
+        public float OpenArcDegrees
+        {
+            get
+            {
+                Ship ship = base.Part?.Ship;
+                if (ship == null) return 0f;
+                return ComputeSpan(ship).Width(Rules.ScanRays, (float)Rules.Arc * 180f / (float)Math.PI);
+            }
+        }
 
         public override void OnPartAttached()
         {
@@ -80,7 +83,6 @@ namespace ZTX.BioCirculation.Game
             int n = Rules.MaxDiscs > 0 ? Rules.MaxDiscs : 1;
             _keys = new object[n];
             for (int i = 0; i < n; i++) _keys[i] = new object();
-            _scannedAtPartCount = -1;
             if (!s_all.Contains(this)) s_all.Add(this);
         }
 
@@ -91,6 +93,31 @@ namespace ZTX.BioCirculation.Game
             base.OnPartDetaching();
         }
 
+        internal void TraceState(ref TraceHash output)
+        {
+            Part p = base.Part;
+            Ship ship = p?.Ship;
+            if (ship == null) { output.Add(-1); return; }
+            output.Add(p.Location.X).Add(p.Location.Y).Add(IsActive);
+            if (_keys == null) return;
+            ArcSpan span = ComputeSpan(ship);
+            output.Add(span.Start).Add(span.Length);
+            if (span.Length <= 0) return;
+            int rays = Rules.ScanRays > 0 ? Rules.ScanRays : 1;
+            float arcDeg = (float)Rules.Arc * 180f / (float)Math.PI;
+            float widthDeg = span.Width(rays, arcDeg);
+            float centreDeg = span.CentreOffset(rays, arcDeg);
+            if (widthDeg <= 0f) return;
+            const float ToRad = (float)Math.PI / 180f;
+            float dir = (float)base.DetWorldDirection + centreDeg * ToRad;
+            Vector2 origin = ship.DetTransformPointToWorld(p.LocalCenter);
+            List<Disc> discs = ConeGeometry.Build(origin.X, origin.Y, dir, widthDeg * 0.5f * ToRad,
+                                                  Rules.Range, _keys.Length, MathxTrig.Instance,
+                                                  Rules.StartDistance);
+            output.Add(discs.Count);
+            for (int i = 0; i < discs.Count; i++) output.Add(discs[i].X).Add(discs[i].Y).Add(discs[i].Radius);
+        }
+
         private static bool SeesThrough(Part hit)
         {
             return Config.EyesSeeThroughCartilage
@@ -98,7 +125,7 @@ namespace ZTX.BioCirculation.Game
                 && hit.Rules.TypeCategories.Contains(CartilageCategory);
         }
 
-        private void Rescan(Ship ship)
+        private ArcSpan ComputeSpan(Ship ship)
         {
             int rays = Rules.ScanRays > 0 ? Rules.ScanRays : 1;
             int reach = Rules.ScanDistance > 0 ? Rules.ScanDistance : 1;
@@ -109,10 +136,9 @@ namespace ZTX.BioCirculation.Game
             var open = new bool[rays];
             for (int i = 0; i < rays; i++)
             {
-                // the ray through the middle of slice i
                 float a = baseAngle - arc * 0.5f + arc * (i + 0.5f) / rays;
-                float dx = (float)Math.Cos(a);
-                float dy = (float)Math.Sin(a);
+                float dx = (float)Halfling.Mathx.Cos((double)a);
+                float dy = (float)Halfling.Mathx.Sin((double)a);
                 bool blocked = false;
                 for (int step = 1; step <= reach && !blocked; step++)
                 {
@@ -126,8 +152,7 @@ namespace ZTX.BioCirculation.Game
                 }
                 open[i] = !blocked;
             }
-            _span = ArcScan.LargestOpenSpan(open);
-            _scannedAtPartCount = ship.Parts.Count;
+            return ArcScan.LargestOpenSpan(open);
         }
 
         public void AppendSightCircles(ICollection<(Circle Circle, object Source)> sink)
@@ -136,13 +161,13 @@ namespace ZTX.BioCirculation.Game
             Ship ship = p?.Ship;
             if (ship == null || _keys == null) return;
 
-            if (_scannedAtPartCount != ship.Parts.Count) Rescan(ship);
-            if (_span.Length <= 0) return;                  // walled in: sees nothing
+            ArcSpan span = ComputeSpan(ship);
+            if (span.Length <= 0) return;
 
             int rays = Rules.ScanRays > 0 ? Rules.ScanRays : 1;
             float arcDeg = (float)Rules.Arc * 180f / (float)Math.PI;
-            float widthDeg = _span.Width(rays, arcDeg);
-            float centreDeg = _span.CentreOffset(rays, arcDeg);
+            float widthDeg = span.Width(rays, arcDeg);
+            float centreDeg = span.CentreOffset(rays, arcDeg);
             if (widthDeg <= 0f) return;
 
             const float ToRad = (float)Math.PI / 180f;
@@ -151,7 +176,8 @@ namespace ZTX.BioCirculation.Game
 
             Vector2 origin = ship.DetTransformPointToWorld(p.LocalCenter);
             List<Disc> discs = ConeGeometry.Build(origin.X, origin.Y, dir, half,
-                                                  Rules.Range, _keys.Length, Rules.StartDistance);
+                                                  Rules.Range, _keys.Length, MathxTrig.Instance,
+                                                  Rules.StartDistance);
             int n = discs.Count < _keys.Length ? discs.Count : _keys.Length;
             for (int i = 0; i < n; i++)
             {
@@ -164,11 +190,12 @@ namespace ZTX.BioCirculation.Game
         {
             if (!IsActive) return "off";
             float arcDeg = (float)Rules.Arc * 180f / (float)Math.PI;
-            return _span.Length <= 0
+            ArcSpan span = ComputeSpan(base.Part.Ship);
+            return span.Length <= 0
                 ? "WALLED IN (no cone)"
                 : string.Format("{0:0}deg of {1:0}deg, offset {2:0}deg, range {3:0}",
-                                _span.Width(Rules.ScanRays, arcDeg), arcDeg,
-                                _span.CentreOffset(Rules.ScanRays, arcDeg), Rules.Range);
+                                span.Width(Rules.ScanRays, arcDeg), arcDeg,
+                                span.CentreOffset(Rules.ScanRays, arcDeg), Rules.Range);
         }
     }
 }

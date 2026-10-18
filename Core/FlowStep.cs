@@ -14,14 +14,11 @@ namespace ZTX.BioCirculation.Core
             if (ticksPerSecond < 1) ticksPerSecond = 1;
             foreach (var n in g.Nodes)
             {
-                // Bank this tick's slice of the per-second rate, release whole units, carry
-                // the remainder. Integer division only — see BloodNode.RateCredit.
                 n.RateCredit += n.FlowRate;
                 n.TickBudget  = n.RateCredit / ticksPerSecond;
                 n.RateCredit -= n.TickBudget * ticksPerSecond;
             }
 
-            // PASS 1 — valve pumps
             foreach (var (fromId, toId) in g.Pumps)
             {
                 var to = g.NodeById(toId);
@@ -31,13 +28,9 @@ namespace ZTX.BioCirculation.Core
                 if (from == null) continue;
                 var governor = to.Role == NodeRole.Valve ? to : from;
                 int move = governor.TickBudget;
-                // Retention floor: a pump can only take what the source holds ABOVE
-                // its Retain — same rule as gradient emission below.
                 int available = from.Volume - from.Retain;
                 if (available < 0) available = 0;
                 if (move > available) move = available;
-                // FlowRoom, not RemainingCapacity: the destination's reserve is kept
-                // free for its own converter (the distributor tap).
                 if (move > to.FlowRoom) move = to.FlowRoom;
                 if (move <= 0) continue;
                 governor.TickBudget -= move;
@@ -58,8 +51,6 @@ namespace ZTX.BioCirculation.Core
                 if (budget > surplus) budget = surplus;
                 if (budget <= 0) continue;
 
-                // Count downhill neighbours first so the budget can be split fairly between
-                // them rather than served first-come.
                 int downhill = 0;
                 foreach (var bId in outs)
                 {
@@ -94,7 +85,6 @@ namespace ZTX.BioCirculation.Core
                     if (want > budget) want = budget;
 
                     delta.TryGetValue(b.Id, out int inbound);
-                    // FlowRoom, not RemainingCapacity: see the pump pass above.
                     int room = b.FlowRoom - inbound;
                     if (want > room) want = room;
                     if (want <= 0) { downhill--; if (downhill < 1) downhill = 1; continue; }

@@ -4,8 +4,6 @@ using System.Text;
 
 namespace ZTX.BioCirculation.Core
 {
-    // Reads the mod's config.rules far enough for Config.Load (2026-09-26). config.rules is written
-    // in the game's own ObjectText syntax, and every PART value in it reaches the DLL through the
     public static class ConfigText
     {
         public static Dictionary<string, string> Parse(string text)
@@ -51,7 +49,6 @@ namespace ZTX.BioCirculation.Core
                 }
                 if (c == ':')
                 {
-                    // an inheritance list: run to the block opener or the end of the line
                     while (i < n && t[i] != '{' && t[i] != '[' && t[i] != '\n') i++;
                     continue;
                 }
@@ -89,7 +86,7 @@ namespace ZTX.BioCirculation.Core
                     pending = t.Substring(start, i - start);
                     continue;
                 }
-                i++;    // anything else (a stray quote, a lone value) is not ours
+                i++;
             }
             return result;
         }
@@ -100,6 +97,17 @@ namespace ZTX.BioCirculation.Core
             if (raw != null && float.TryParse(raw.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out f))
             {
                 target = f;
+                return true;
+            }
+            return false;
+        }
+
+        public static bool TryGetInt(string raw, ref int target)
+        {
+            int n;
+            if (raw != null && int.TryParse(raw.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out n))
+            {
+                target = n;
                 return true;
             }
             return false;

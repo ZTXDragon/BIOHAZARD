@@ -1,7 +1,5 @@
 namespace ZTX.BioCirculation.Core
 {
-    // When an organ may perform ORDINARY repair - the material-paid repair, as opposed to the blood
-    // heal.
     public static class RepairRule
     {
         public static bool CanRepairNow(bool requiresStationary, float speedSquared,

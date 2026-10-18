@@ -6,16 +6,18 @@ using ZTX.BioCirculation.Core;
 
 namespace ZTX.BioCirculation.Game
 {
-    // Career defeat for a CREWLESS fleet: the run ends when the last BRAIN dies, not when the first
-    // part does.
     [HarmonyPatch(typeof(CareerSimModeManager), "GetAllegianceForReducedShip")]
     internal static class ZtxCrewlessAllegiancePatch
     {
+        private static readonly ConditionalWeakTable<Ship, StrongBox<bool>> s_lastAnswer =
+            new ConditionalWeakTable<Ship, StrongBox<bool>>();
+
         internal static bool IsCrewless(Ship ship)
         {
             return ship?.Crew != null
                 && ship.Crew.OnShip.Count == 0
-                && ship.Crew.TotalCrewCapacityWithConstruction == 0;
+                && ship.Crew.TotalCrewCapacityWithConstruction == 0
+                && ZtxBrainManager.HasBrainAboard(ship);
         }
 
         private static bool Prefix(Ship ship, ref int? updateCrewAllegiance, ref int __result)
@@ -27,20 +29,24 @@ namespace ZTX.BioCirculation.Game
                 ship.Crew.Assigned.Count,
                 ship.Commands.HasSignificantCommandParts,
                 ship.Crew.OnShip.Count,
-                ship.Crew.TotalCrewCapacityWithConstruction);
+                ship.Crew.TotalCrewCapacityWithConstruction,
+                hasBioBrain: true);
 
             updateCrewAllegiance = null;
             __result = junk ? -3 : ship.Metadata.PlayerIndex;
 
-            Log.Info("crewless allegiance: class=" + (ship.Rules != null ? ship.Rules.ID.ToString() : "?") +
-                     " brains=" + ship.Commands.HasSignificantCommandParts +
-                     " parts=" + ship.Parts.Count +
-                     " -> " + (junk ? "junk" : "KEEP"));
-            return false;       // the original's crew disjunct would junk this ship immediately
+            if (!s_lastAnswer.TryGetValue(ship, out StrongBox<bool> last) || last.Value != junk)
+            {
+                s_lastAnswer.AddOrUpdate(ship, new StrongBox<bool>(junk));
+                Log.Info("crewless allegiance: class=" + (ship.Rules != null ? ship.Rules.ID.ToString() : "?") +
+                         " brains=" + ship.Commands.HasSignificantCommandParts +
+                         " parts=" + ship.Parts.Count +
+                         " -> " + (junk ? "junk" : "KEEP"));
+            }
+            return false;
         }
     }
 
-    // The other half: the defeat screen itself.
     [HarmonyPatch(typeof(CareerGameModeManager), "Update")]
     internal static class ZtxCareerDefeatSuppressionPatch
     {
@@ -52,7 +58,7 @@ namespace ZTX.BioCirculation.Game
         {
             __state = false;
             if (!Config.Enabled || __instance == null) return;
-            if (__instance._gameOverGui != null) return;    // a real screen is up; leave it alone
+            if (__instance._gameOverGui != null) return;
 
             if (__instance.Sim.Ships.IsDoingLocalJump || __instance.Game.IsDoingNodeJump) return;
 
@@ -62,9 +68,9 @@ namespace ZTX.BioCirculation.Game
                 if (s == null) continue;
                 ships++;
                 if (s.Crew.Assigned.Count > 0) crewed++;
-                if (s.Commands.HasSignificantCommandParts) brained++;
+                if (s.Commands.HasSignificantCommandParts && ZtxBrainManager.HasBrainAboard(s)) brained++;
             }
-            if (ships == 0) return;     // nothing of the player's is loaded; not ours to judge
+            if (ships == 0) return;
 
             if (!CareerDefeatRule.ShouldSuppressDefeat(false, crewed, brained))
             {
@@ -95,8 +101,6 @@ namespace ZTX.BioCirculation.Game
         }
     }
 
-    // AllowSaveGame is _gameOverGui == null (CareerGameModeManager.cs:336) - the single other
-    // reader of the field the suppression borrows.
     [HarmonyPatch(typeof(CareerGameModeManager), "AllowSaveGame", MethodType.Getter)]
     internal static class ZtxCareerAllowSaveGamePatch
     {

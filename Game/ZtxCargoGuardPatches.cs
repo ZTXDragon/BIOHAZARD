@@ -7,8 +7,6 @@ using HarmonyLib;
 
 namespace ZTX.BioCirculation.Game
 {
-    // Two guards that keep the ENGINE's nugget machinery from re-routing or fighting over the haul
-    // organs' in-flight cargo (2026-09-12, user report: "some tentacles move chain resources
     [HarmonyPatch(typeof(TurretWeapon), "TryAcquireCollectNuggetsTarget")]
     internal static class ZtxBeamCarryExclusionPatch
     {
@@ -32,8 +30,6 @@ namespace ZTX.BioCirculation.Game
         }
     }
 
-    // Stops the engine's full-sink fallback from re-routing TRACKED cargo to a priority-picked
-    // storage.
     [HarmonyPatch(typeof(CollectNuggetEffectRules), "RequeueRemainingResources")]
     internal static class ZtxCargoRequeueGuardPatch
     {

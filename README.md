@@ -46,7 +46,7 @@ Please include both files with a report, and the ship if the problem happens on 
 
 Full C# source: https://github.com/ZTXDragon/BIOHAZARD
 
-`Biohazard-Source/` builds with the .NET 10 SDK and HarmonyLib: `Core/` is engine-free logic (blood graph, flow steps, field builder, digestion plan, heal spread, fair share, config parser), `Game/` holds the Harmony patches and part components, and `Config.cs`, `Log.cs` and `Main.cs` are the configuration, logging and entry point. Run `build_and_install.ps1` with Cosmoteer closed to compile and install the DLL, this README and the LICENSE in one step. The xunit tests sit beside the repo in the private workspace and compile `Core/` directly.
+The source builds with the .NET 10 SDK and HarmonyLib: `Core/` is engine-free logic (blood graph, flow steps, field builder, digestion plan, heal spread, fair share, config parser), `Game/` holds the Harmony patches and part components, and `Config.cs`, `Log.cs` and `Main.cs` are the configuration, logging and entry point. Run `build_and_install.ps1` with Cosmoteer closed to compile and install the DLL, this README and the LICENSE in one step. The xunit tests sit beside the repo in the private workspace and compile `Core/` directly.
 
 ## Compatibility
 

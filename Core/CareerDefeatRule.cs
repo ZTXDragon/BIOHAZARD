@@ -1,6 +1,5 @@
 namespace ZTX.BioCirculation.Core
 {
-    // When a CREWLESS fleet loses its career run.
     public static class CareerDefeatRule
     {
         public static bool VanillaJunksReducedShip(int assignedCrew, bool hasCommandParts,
@@ -11,9 +10,9 @@ namespace ZTX.BioCirculation.Core
         }
 
         public static bool JunksReducedShip(int assignedCrew, bool hasCommandParts,
-                                            int crewOnShip, int crewCapacity)
+                                            int crewOnShip, int crewCapacity, bool hasBioBrain)
         {
-            bool crewless = crewOnShip == 0 && crewCapacity == 0;
+            bool crewless = crewOnShip == 0 && crewCapacity == 0 && hasBioBrain;
             if (!crewless)
                 return VanillaJunksReducedShip(assignedCrew, hasCommandParts, crewOnShip, crewCapacity);
             return !hasCommandParts;

@@ -7,8 +7,6 @@ using Halfling.Serialization;
 
 namespace ZTX.BioCirculation.Game
 {
-    // Rules for ZtxEyeCone: directional sight, shaped like a weapon's firing arc instead of the
-    // circle every vanilla sensor produces.
     [ReflectiveSerialization(Explicit = true)]
     [ReflectivePortableHashing(Explicit = true)]
     [SerialDerivedType(TypeName = "ZtxEyeCone")]

@@ -20,7 +20,6 @@ using ZTX.BioCirculation.Core;
 
 namespace ZTX.BioCirculation.Game
 {
-    // Vanilla's Eject controls, made to work on a crewless bio ship (2026-09-24).
     internal static class ZtxEject
     {
         private static readonly ID<PartCategory> BioCategory = new ID<PartCategory>("ztx_bio");
@@ -56,8 +55,6 @@ namespace ZTX.BioCirculation.Game
             if (amount <= 0) return;
 
             ID<ResourceRules> type = source.ResourceType;
-            // Read back what actually left: SubtractResources clamps, and its setter notifies
-            // subscribers synchronously, so the level can move underneath us.
             int taken = source.SubtractResources(amount);
             if (taken <= 0) return;
 
@@ -79,7 +76,6 @@ namespace ZTX.BioCirculation.Game
         }
     }
 
-    // Sim side: a vent request never becomes a transfer job.
     [HarmonyPatch(typeof(MPMoveResourcesInput), nameof(MPMoveResourcesInput.Execute))]
     internal static class ZtxEjectExecutePatch
     {
@@ -92,7 +88,6 @@ namespace ZTX.BioCirculation.Game
         }
     }
 
-    // Local prediction: vanilla creates an unconfirmed job for instant feedback.
     [HarmonyPatch(typeof(MPMoveResourcesInput), nameof(MPMoveResourcesInput.ExecuteLocalImmediate))]
     internal static class ZtxEjectLocalPatch
     {
@@ -102,7 +97,6 @@ namespace ZTX.BioCirculation.Game
         }
     }
 
-    // The resource bar's right-click menu (Eject Some / All / Excess).
     [HarmonyPatch(typeof(ResourcesToolbox.ResourceButton), "EjectResources")]
     internal static class ZtxEjectMenuPatch
     {
@@ -151,7 +145,6 @@ namespace ZTX.BioCirculation.Game
         }
     }
 
-    // The Eject button on a selected storage tile (and its mirrored tiles).
     [HarmonyPatch(typeof(MoveResourcesState), "OnEjectClicked")]
     internal static class ZtxEjectTilePatch
     {
@@ -188,7 +181,6 @@ namespace ZTX.BioCirculation.Game
         }
     }
 
-    // Un-greys the tile Eject button.
     [HarmonyPatch]
     internal static class ZtxEjectButtonPatch
     {

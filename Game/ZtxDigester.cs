@@ -11,14 +11,11 @@ using ZTX.BioCirculation.Core;
 
 namespace ZTX.BioCirculation.Game
 {
-    // A stomach that digests whatever is in its maw, each resource by its own recipe.
     internal class ZtxDigester : PartComponent
     {
         private FlexResourceGrid _grid;
         private ISimpleResourceStorage _output;
 
-        // Scratch buffers for the plan-then-commit take. Reused every tick so a digester does
-        // not allocate three lists per recipe per tick; PlanTake clears what it fills.
         private readonly List<FlexResourceGrid.ResourceTile> _planTiles =
             new List<FlexResourceGrid.ResourceTile>();
         private readonly List<int> _planQty = new List<int>();
@@ -53,7 +50,7 @@ namespace ZTX.BioCirculation.Game
         public int Tick(float seconds)
         {
             if (_grid == null || _output == null) return 0;
-            if (_toggle != null && !_toggle.IsToggleOn) return 0;   // brain gate, v0.69.0
+            if (_toggle != null && !_toggle.IsToggleOn) return 0;
 
             int produced = 0;
             for (int i = 0; i < _keys.Length; i++)
@@ -62,11 +59,9 @@ namespace ZTX.BioCirculation.Game
                 if (_cooldowns[i] > 0f) continue;
 
                 ZtxDigesterRules.Recipe r = _recipes[i];
-                // GetValue(part, scale) applies any buffs on this part, so a future
-                // digestive-enzyme buff scales recipes with no code change.
                 float interval = (float)r.Interval.GetValue(base.Part, 1f).Seconds;
                 _cooldowns[i] += interval > 0f ? interval : 1f;
-                if (_cooldowns[i] < 0f) _cooldowns[i] = 0f;   // never bank a burst after a stall
+                if (_cooldowns[i] < 0f) _cooldowns[i] = 0f;
 
                 produced += ConvertOne(_keys[i], r);
             }
@@ -81,8 +76,6 @@ namespace ZTX.BioCirculation.Game
 
             if (_output.RemainingCapacity < make)
             {
-                // Verbose (2026-09-26): when the output fills, every waiting resource logged at
-                // once - ~20 flushed lines, a 185 ms stall in the digest tick.
                 if (_blockedLogged.Add(resource))
                     Log.Verbose("digester: " + resource + " needs room for " + make +
                                 " biomass but output is " + OutputFill + " - waiting");
@@ -106,8 +99,6 @@ namespace ZTX.BioCirculation.Game
             {
                 int take = _planTakes[i];
                 if (take <= 0) continue;
-                // SetResources is the only sanctioned mutator. Writing tile.Resources directly
-                // (Publicizer exposes it) would bypass the grid's total-quantity bookkeeping.
                 FlexResourceGrid.ResourceTile t = _planTiles[i];
                 t.SetResources(t.Resources - take, resource);
             }
@@ -206,6 +197,7 @@ namespace ZTX.BioCirculation.Game
             }
 
             ZtxDigesterSinkPatch.Register(this);
+            ZtxInstantBuildStockPatch.RegisterDigesterOutput(_output);
             _manager = ZtxDigestManager.GetOrCreate(base.Ship);
             _manager?.Register(this);
         }
@@ -215,6 +207,7 @@ namespace ZTX.BioCirculation.Game
             _manager?.Deregister(this);
             _manager = null;
             ZtxDigesterSinkPatch.Deregister(this);
+            ZtxInstantBuildStockPatch.DeregisterDigesterOutput(_output);
             _grid = null;
             _output = null;
             base.OnPartDetaching();

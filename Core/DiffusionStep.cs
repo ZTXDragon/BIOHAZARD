@@ -3,7 +3,6 @@ using System.Collections.Generic;
 
 namespace ZTX.BioCirculation.Core
 {
-    // The BIOMASS transport model: passive equalization, thermal-style.
     public static class DiffusionStep
     {
         public static void Tick(BloodGraph g)
@@ -21,7 +20,6 @@ namespace ZTX.BioCirculation.Core
                 if (budget > a.Volume) budget = a.Volume;
                 if (budget <= 0) continue;
 
-                // Count eligible receivers first so the budget splits fairly between them.
                 int eligible = 0;
                 foreach (var bId in outs)
                 {
@@ -51,8 +49,6 @@ namespace ZTX.BioCirculation.Core
                     if (want > share) want = share;
                     if (want > budget) want = budget;
 
-                    // Destination room accounts for what it is already scheduled to receive
-                    // this tick, so concurrent senders cannot jointly overfill it.
                     delta.TryGetValue(b.Id, out int inbound);
                     int room = b.RemainingCapacity - inbound;
                     if (want > room) want = room;

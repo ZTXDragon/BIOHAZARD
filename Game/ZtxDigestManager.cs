@@ -6,14 +6,30 @@ using Cosmoteer.Ships.Parts;
 using Halfling.Scene2D;
 using Halfling.Timing;
 
+using ZTX.BioCirculation.Core;
+
 namespace ZTX.BioCirculation.Game
 {
-    // Drives digestion for one ship: every ZtxDigester converts what is in its maw and ejects what
-    // it cannot use.
     internal class ZtxDigestManager : ShipComponent
     {
         private static readonly ConditionalWeakTable<Ship, ZtxDigestManager> s_managers =
             new ConditionalWeakTable<Ship, ZtxDigestManager>();
+
+        internal static ZtxDigestManager Find(Ship ship)
+        {
+            return ship != null && s_managers.TryGetValue(ship, out ZtxDigestManager m) ? m : null;
+        }
+
+        internal void TraceState(ref TraceHash h)
+        {
+            h.Add(_digesters.Count).Add(_ejectCounter);
+            for (int i = 0; i < _digesters.Count; i++)
+            {
+                ZtxDigester d = _digesters[i];
+                if (d?.Part == null) { h.Add(-1); continue; }
+                h.Add(d.Part.Location.X).Add(d.Part.Location.Y).Add(d.OutputFill);
+            }
+        }
 
         private readonly List<ZtxDigester> _digesters = new List<ZtxDigester>();
         private ZtxDigester[] _snapshot = new ZtxDigester[0];
@@ -73,27 +89,22 @@ namespace ZTX.BioCirculation.Game
 
             if (_orderDirty)
             {
-                // Grid location, the engine's own deterministic part key. Registration order is
-                // part ATTACH order, and List.Remove shifts every later index.
                 _digesters.Sort(CompareByLocation);
                 _orderDirty = false;
             }
 
-            // Snapshot before iterating: writing a storage synchronously notifies engine
-            // subscribers that can add or remove components mid-pass.
             if (_snapshot.Length < _digesters.Count) _snapshot = new ZtxDigester[_digesters.Count * 2];
             _snapshotCount = _digesters.Count;
             _digesters.CopyTo(0, _snapshot, 0, _snapshotCount);
 
             float seconds = (float)fixedUpdater.Interval.Seconds;
-            bool sweepEjects = ++_ejectCounter >= 60;   // ~2s; forced-in resources are rare
+            bool sweepEjects = ++_ejectCounter >= 60;
             if (sweepEjects) _ejectCounter = 0;
 
             for (int i = 0; i < _snapshotCount; i++)
             {
                 ZtxDigester d = _snapshot[i];
                 if (d?.Part == null) continue;
-                // A ship split reuses the SAME Part instances across both halves.
                 if (!ReferenceEquals(d.Part.Ship, base.Ship)) continue;
 
                 _producedThisWindow += d.Tick(seconds);

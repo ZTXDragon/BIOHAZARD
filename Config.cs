@@ -6,7 +6,6 @@ using ZTX.BioCirculation.Core;
 
 namespace ZTX.BioCirculation
 {
-    // The DLL's global switches.
     public static class Config
     {
         public static float GradientGain       = 0.25f;
@@ -29,6 +28,10 @@ namespace ZTX.BioCirculation
         public static bool  VerboseLog         = false;
 
         public static float BiomassShareSeconds = 0.5f;
+
+        public static bool  DesyncTrace        = false;
+
+        public static int   DesyncTraceTicks   = 30;
 
         private const string GROUP = "Behaviours/";
 
@@ -91,6 +94,8 @@ namespace ZTX.BioCirculation
                 case "PerfProbe":               ok = ConfigText.TryGetBool(raw, ref PerfProbe); break;
                 case "PerfReportSeconds":       ok = ConfigText.TryGetFloat(raw, ref PerfReportSeconds); break;
                 case "VerboseLog":              ok = ConfigText.TryGetBool(raw, ref VerboseLog); break;
+                case "DesyncTrace":             ok = ConfigText.TryGetBool(raw, ref DesyncTrace); break;
+                case "DesyncTraceTicks":        ok = ConfigText.TryGetInt(raw, ref DesyncTraceTicks); break;
                 default: return ApplyResult.Unknown;
             }
             return ok ? ApplyResult.Applied : ApplyResult.Invalid;
@@ -108,7 +113,9 @@ namespace ZTX.BioCirculation
                  + " TentacleBasePaintOnly=" + TentacleBasePaintOnly
                  + " PerfProbe=" + PerfProbe
                  + " PerfReportSeconds=" + PerfReportSeconds
-                 + " VerboseLog=" + VerboseLog;
+                 + " VerboseLog=" + VerboseLog
+                 + " DesyncTrace=" + DesyncTrace
+                 + " DesyncTraceTicks=" + DesyncTraceTicks;
         }
     }
 }

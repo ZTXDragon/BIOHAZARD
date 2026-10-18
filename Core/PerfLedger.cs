@@ -3,10 +3,8 @@ using System.Collections.Generic;
 
 namespace ZTX.BioCirculation.Core
 {
-    // Elapsed time per key, for the performance probe (2026-09-25).
     public sealed class PerfLedger<TKey>
     {
-        // Everything recorded against one key since the last reset.
         public sealed class Entry
         {
             public TKey Key;
@@ -53,7 +51,6 @@ namespace ZTX.BioCirculation.Core
         public void Reset() => _entries.Clear();
     }
 
-    // Stopwatch-tick arithmetic for the probe's report.
     public static class PerfMath
     {
         public static double Ms(long elapsed, long frequency) =>

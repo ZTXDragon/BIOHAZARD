@@ -8,20 +8,18 @@ using Cosmoteer.Ships.Crew.Jobs;
 using Cosmoteer.Ships.Parts;
 using Cosmoteer.Ships.Parts.Resources;
 using Cosmoteer.Ships.Resources;
+using ZTX.BioCirculation.Core;
 using Vector2 = Halfling.Geometry.Vector2;
 
 namespace ZTX.BioCirculation.Game
 {
-    // Files the resource-delivery jobs that feed build sites on crewless ships.
     internal static class ZtxConstructionSupply
     {
-
-        public static int Update(Ship ship, List<ResourceTransferJob> filed)
+        public static int Update(Ship ship, List<ResourceTransferJob> filed, ZtxHaulManager haul)
         {
             if (ship?.Sim == null) return 0;
             var sources = new List<(IResourceSource Source, int Available)>();
 
-            // ---- GC our previously filed jobs -------------------------------------
             for (int i = filed.Count - 1; i >= 0; i--)
             {
                 ResourceTransferJob job = filed[i];
@@ -32,14 +30,19 @@ namespace ZTX.BioCirculation.Game
                 bool sinkStale = !done && job.Sink.GetRemainingCapacity(job.ResourceType, false) <= 0;
                 bool sourceDead = !done && !sinkStale &&
                                   (job.Source == null || job.Source.Resources <= 0);
-                if (done || sinkStale || sourceDead)
+                bool orphaned = !done && !sinkStale && !sourceDead &&
+                                (!job.Source.SuppliesResources || !Covered(haul, job.Source, job.Sink.Center));
+                if (done || sinkStale || sourceDead || orphaned)
                 {
-                    if (!done) job.Cancel();
+                    if (!done)
+                        ZtxDesyncTrace.Event(ship, "supply cancel (" +
+                                             (sinkStale ? "site full" : sourceDead ? "source empty" : "no organ or opted out") +
+                                             ") " + ZtxDesyncTrace.JobText(job));
+                    ZtxModJobs.Retire(job);
                     filed.RemoveAt(i);
                 }
             }
 
-            // ---- file new jobs -----------------------------------------------------
             ConstructionManager cm = ship.OptionalConstructionManager;
             if (cm == null) return 0;
 
@@ -48,8 +51,6 @@ namespace ZTX.BioCirculation.Game
             for (int q = 0; q < queue.Count; q++)
             {
                 QueuedPartConstruction qpc = queue[q];
-                // IsReady gates PartConstructionSink.Sim — the haul manager's candidate
-                // filter drops sinks whose Sim is null, so filing early is pure waste.
                 if (qpc == null || !qpc.IsReady) continue;
 
                 IReadOnlyList<QueuedPartConstruction.PartConstructionSink> sinks = qpc.ResourceSinks;
@@ -57,7 +58,7 @@ namespace ZTX.BioCirculation.Game
                 {
                     QueuedPartConstruction.PartConstructionSink sink = sinks[s];
                     filedCount += FileForSink(ship, sink, sink.ResourceType, sink.Center,
-                                              sources, filed);
+                                              sources, filed, haul);
                 }
             }
 
@@ -72,7 +73,7 @@ namespace ZTX.BioCirculation.Game
                 {
                     QueuedPartRepair.PartRepairSink sink = sinks[s];
                     filedCount += FileForSink(ship, sink, sink.ResourceType, sink.Center,
-                                              sources, filed);
+                                              sources, filed, haul);
                 }
             }
             return filedCount;
@@ -81,13 +82,11 @@ namespace ZTX.BioCirculation.Game
         private static int FileForSink(Ship ship, IResourceSink sink, ID<ResourceRules> type,
                                        Vector2 center,
                                        List<(IResourceSource Source, int Available)> sources,
-                                       List<ResourceTransferJob> filed)
+                                       List<ResourceTransferJob> filed, ZtxHaulManager haul)
         {
             int need = sink.GetRemainingCapacity(type, false);
             if (need <= 0) return 0;
 
-            // Net out everything already on its way — our jobs, nugget jobs the pickup half
-            // re-filed, anything else targeting this sink.
             foreach (ResourceTransferJob j in
                      ResourceTransferJob.GetTransferJobsFor(sink, MPValueType.Confirmed))
             {
@@ -97,10 +96,11 @@ namespace ZTX.BioCirculation.Game
             if (need <= 0) return 0;
 
             int filedCount = 0;
-            CollectSources(ship, type, sources);
+            CollectSources(ship, type, center, sources);
             for (int i = 0; i < sources.Count && need > 0; i++)
             {
                 (IResourceSource source, int available) = sources[i];
+                if (!Covered(haul, source, center)) continue;
                 int amount = need < available ? need : available;
                 if (amount <= 0) continue;
 
@@ -110,14 +110,16 @@ namespace ZTX.BioCirculation.Game
                 ResourceTransferJob job = new ResourceTransferJob(
                     source, sink, type, new MPValue<int>(amount), dist);
                 ship.Jobs.AddJob(job);
+                ZtxModJobs.Register(job);
                 filed.Add(job);
+                ZtxDesyncTrace.Event(ship, "supply file " + ZtxDesyncTrace.JobText(job));
                 filedCount++;
                 need -= amount;
             }
             return filedCount;
         }
 
-        private static void CollectSources(Ship ship, ID<ResourceRules> type,
+        private static void CollectSources(Ship ship, ID<ResourceRules> type, Vector2 site,
                                            List<(IResourceSource Source, int Available)> sources)
         {
             sources.Clear();
@@ -125,6 +127,7 @@ namespace ZTX.BioCirculation.Game
             foreach (BaseResourceStorage storage in BaseResourceStorage.GetAllSuppliersOnShip(ship))
             {
                 if (storage.ResourceType != type) continue;
+                if (!((IResourceSource)storage).SuppliesResources) continue;
                 if (storage is TypedResourceGrid grid)
                 {
                     foreach (TypedResourceGrid.ResourceTile tile in grid)
@@ -136,25 +139,37 @@ namespace ZTX.BioCirculation.Game
                 }
             }
 
-            if (sources.Count > 1) sources.Sort(CompareSources);
+            if (sources.Count > 1) sources.Sort((a, b) => CompareSources(a, b, site));
         }
 
         private static void AddSource(Ship ship, IResourceSource source,
                                       List<(IResourceSource Source, int Available)> sources)
         {
-            int available = source.Resources -
-                            ship.Resources.GetAnticipatedPickUp(source, MPValueType.Confirmed);
+            int owed = 0;
+            foreach (ResourceTransferJob j in
+                     ResourceTransferJob.GetTransferJobsFor(source, MPValueType.Confirmed))
+            {
+                owed += j.ResourcesRequested.Confirmed - j.ResourcesInHand;
+            }
+            int available = SupplyRule.Available(source.Resources, owed);
             if (available > 0) sources.Add((source, available));
         }
 
-        private static int CompareSources((IResourceSource Source, int Available) a,
-                                          (IResourceSource Source, int Available) b)
+        private static bool Covered(ZtxHaulManager haul, IResourceSource source, Vector2 sink)
         {
-            int c = b.Available.CompareTo(a.Available);
-            if (c != 0) return c;
+            Part part = source?.Part;
+            return part != null && haul != null && haul.AnyBuilderCovers(part.LocalCenter, sink);
+        }
+
+        private static int CompareSources((IResourceSource Source, int Available) a,
+                                          (IResourceSource Source, int Available) b, Vector2 site)
+        {
             Part pa = a.Source.Part, pb = b.Source.Part;
             if (pa == null) return pb == null ? 0 : 1;
             if (pb == null) return -1;
+            int c = SupplyRule.Compare(a.Source.Center.DistanceSquaredTo(site), a.Available,
+                                       b.Source.Center.DistanceSquaredTo(site), b.Available);
+            if (c != 0) return c;
             c = pa.Location.X.CompareTo(pb.Location.X);
             return c != 0 ? c : pa.Location.Y.CompareTo(pb.Location.Y);
         }

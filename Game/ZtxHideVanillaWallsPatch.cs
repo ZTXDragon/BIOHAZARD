@@ -3,11 +3,10 @@ using Cosmoteer.Ships;
 using Cosmoteer.Ships.Parts;
 using Halfling.Geometry;
 using HarmonyLib;
+using ZTX.BioCirculation.Core;
 
 namespace ZTX.BioCirculation.Game
 {
-    // Suppresses the VANILLA hull-wall skin on bio parts (2026-09-12, user request: the bio wall
-    // art is not painted yet and the grey terran plating must not show meanwhile).
     internal static class ZtxHideVanillaWalls
     {
         private static readonly ID<PartCategory> BioCategory = new ID<PartCategory>("ztx_bio");
@@ -20,7 +19,6 @@ namespace ZTX.BioCirculation.Game
         }
     }
 
-    // Clears the vanilla wall skin around bio parts, at the LAST possible moment.
     [HarmonyPatch(typeof(ExternalWallsManager), "UpdateCell", new[] { typeof(IntVector2), typeof(byte) })]
     internal static class ZtxHideExternalWallsPatch
     {
@@ -40,35 +38,21 @@ namespace ZTX.BioCirculation.Game
             Ship ship = __instance?.Ship;
             if (ship == null) return;
 
-            Part self = ship.Parts[cell, PartRectType.Normal];
-            if (self != null && ZtxHideVanillaWalls.Applies(self.Rules))
-            {
-                sitCode = byte.MaxValue;
-                return;
-            }
-
             for (int i = 0; i < 8; i++)
             {
                 IntVector2 their = cell + Offsets[i];
-                Part n = ship.Parts[their, PartRectType.Normal];
-                if (n != null && ZtxHideVanillaWalls.Applies(n.Rules))
-                {
-                    sitCode |= (byte)(1 << (7 - i));
-                    continue;
-                }
-                if (ship.Parts.HasVirtualInternalCell(cell, their, IsBioPart))
+                bool bioLink = ship.Parts.HasVirtualInternalCell(cell, their, IsBioPart);
+                if (BioWallSide.Hide(NeighbourAt(ship, their), bioLink))
                     sitCode |= (byte)(1 << (7 - i));
             }
         }
-    }
 
-    // Stops wall segments being drawn on a bio part's own cells.
-    [HarmonyPatch(typeof(PartRules), "GetInternalWalls")]
-    internal static class ZtxHideInternalWallsPatch
-    {
-        private static void Postfix(PartRules __instance, ref AdjacencyFlags __result)
+        private static WallNeighbour NeighbourAt(Ship ship, IntVector2 cell)
         {
-            if (ZtxHideVanillaWalls.Applies(__instance)) __result = AdjacencyFlags.None;
+            Part part = ship.Parts[cell, PartRectType.Normal];
+            if (part == null) return WallNeighbour.Empty;
+            if (ZtxHideVanillaWalls.Applies(part.Rules)) return WallNeighbour.Bio;
+            return part.IsUnderConstruction ? WallNeighbour.Empty : WallNeighbour.Other;
         }
     }
 }

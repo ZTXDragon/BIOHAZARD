@@ -11,8 +11,6 @@ using Cosmoteer.Ships.Resources;
 
 namespace ZTX.BioCirculation.Game
 {
-    // Files the transfer jobs behind player SUPPLY-CHAIN LINKS on crewless ships (2026-09-12, user
-    // report: linking a storage to feed the stomach did nothing while moving individual resources
     internal static class ZtxChainSupply
     {
         private const int MaxJobsPerLink = 4;
@@ -21,7 +19,6 @@ namespace ZTX.BioCirculation.Game
         {
             if (ship?.Sim == null) return 0;
 
-            // ---- GC our previously filed jobs (same discipline as construction) ----
             for (int i = filed.Count - 1; i >= 0; i--)
             {
                 ResourceTransferJob job = filed[i];
@@ -35,6 +32,8 @@ namespace ZTX.BioCirculation.Game
                 {
                     if (!done)
                     {
+                        ZtxDesyncTrace.Event(ship, "chain cancel (" + (sinkStale ? "sink full" : "source empty") +
+                                             ") " + ZtxDesyncTrace.JobText(job));
                         if (ZtxHaulDebug.Verbose)
                             Log.Info("chain GC: cancel (" + (sinkStale ? "sink-full" : "source-dead") +
                                      ") " + ZtxHaulDebug.Src(job.Source) + " -> " +
@@ -42,6 +41,7 @@ namespace ZTX.BioCirculation.Game
                                      " remaining=" + remaining);
                         job.Cancel();
                     }
+                    ZtxModJobs.Retire(job);
                     filed.RemoveAt(i);
                 }
             }
@@ -85,7 +85,6 @@ namespace ZTX.BioCirculation.Game
                     int budget = MaxJobsPerLink;
                     if (consumer is FlexResourceGrid flex)
                     {
-                        // Any stackable the supplier holds may flow into the maw.
                         CollectPartSources(ship, supplier, null, sources);
                         foreach ((IResourceSource source, int available) in sources)
                         {
@@ -115,8 +114,6 @@ namespace ZTX.BioCirculation.Game
                             }
                         }
                     }
-                    // Other consumer kinds (factory ResourceConsumer inputs) are fed by
-                    // their own systems; a chain into one is ignored rather than fought.
                 }
             }
             return filedCount;
@@ -143,7 +140,9 @@ namespace ZTX.BioCirculation.Game
             ResourceTransferJob job = new ResourceTransferJob(
                 source, sink, rt, new MPValue<int>(amount), dist);
             ship.Jobs.AddJob(job);
+            ZtxModJobs.Register(job);
             filed.Add(job);
+            ZtxDesyncTrace.Event(ship, "chain file " + ZtxDesyncTrace.JobText(job));
             if (ZtxHaulDebug.Verbose)
                 Log.Info("chain file: " + amount + " " + rt + " " + ZtxHaulDebug.Src(source) +
                          " -> " + ZtxHaulDebug.Sink(sink));

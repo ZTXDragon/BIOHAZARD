@@ -6,7 +6,6 @@ using ZTX.BioCirculation.Core;
 
 namespace ZTX.BioCirculation.Game
 {
-    // ON while the part sits at the authored number of clockwise quarter turns.
     internal class ZtxPartRotationToggle : PartComponent, IPartComponentToggle, IComponentToggleProvider
     {
         private bool _on;

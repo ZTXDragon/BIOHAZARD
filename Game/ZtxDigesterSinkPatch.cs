@@ -7,7 +7,6 @@ using HarmonyLib;
 
 namespace ZTX.BioCirculation.Game
 {
-    // Makes a digester's maw REFUSE resources it has no recipe for.
     internal static class ZtxDigesterSinkPatch
     {
         private static readonly ConditionalWeakTable<FlexResourceGrid, ZtxDigester> s_owned =
@@ -36,7 +35,6 @@ namespace ZTX.BioCirculation.Game
             return !digester.HasRecipeFor(resource);
         }
 
-        // Hides the maw from every automatic resource router.
         [HarmonyPatch]
         internal static class GetRemainingCapacityPatch
         {
@@ -58,7 +56,6 @@ namespace ZTX.BioCirculation.Game
             }
         }
 
-        // Blocks the direct write path.
         [HarmonyPatch]
         internal static class ReceiveResourcesPatch
         {
@@ -76,9 +73,9 @@ namespace ZTX.BioCirculation.Game
             internal static bool Prefix(FlexResourceGrid.ResourceTile __instance,
                                         ID<ResourceRules> resourceType, ref int __result)
             {
-                if (!Refuses(__instance, resourceType)) return true;   // run the original
-                __result = 0;                                          // accepted nothing
-                return false;                                          // skip the original
+                if (!Refuses(__instance, resourceType)) return true;
+                __result = 0;
+                return false;
             }
         }
     }

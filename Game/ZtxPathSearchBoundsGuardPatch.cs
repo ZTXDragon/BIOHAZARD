@@ -16,20 +16,24 @@ namespace ZTX.BioCirculation.Game
         private static bool Prefix(PathManager __instance, IntRect searchOrigin,
                                    ref IEnumerable<(IntVector2 Cell, float Dist)> __result)
         {
-            // Vanilla already short-circuits this case; leave it alone.
-            if (__instance._pathfinders == null)
+            if (!OutsideGrid(__instance, searchOrigin)) return true;
+            __result = Array.Empty<(IntVector2, float)>();
+            return false;
+        }
+
+        internal static bool OutsideGrid(PathManager paths, IntRect searchOrigin)
+        {
+            if (paths._pathfinders == null)
             {
-                return true;
+                return false;
             }
 
-            IntRect b = __instance._bounds;
+            IntRect b = paths._bounds;
 
-            // The seed loop iterates [Top, Bottom) x [Left, Right) and indexes an array
-            // sized to _bounds, so the origin must sit fully inside those half-open edges.
             if (searchOrigin.Left >= b.Left && searchOrigin.Top >= b.Top
                 && searchOrigin.Right <= b.Right && searchOrigin.Bottom <= b.Bottom)
             {
-                return true;
+                return false;
             }
 
             int n = Interlocked.Increment(ref _skipped);
@@ -40,8 +44,32 @@ namespace ZTX.BioCirculation.Game
                     + "] grid [" + b.Left + "," + b.Top + "," + b.Right + "," + b.Bottom
                     + "] count=" + n);
             }
+            return true;
+        }
+    }
 
-            __result = Array.Empty<(IntVector2, float)>();
+    [HarmonyPatch(typeof(PathManager), nameof(PathManager.SearchPartsFrom),
+                  new[] { typeof(IntRect), typeof(bool), typeof(int) })]
+    internal static class ZtxPathSearchPartsBoundsGuardPatch
+    {
+        private static bool Prefix(PathManager __instance, IntRect searchOrigin,
+                                   ref IEnumerable<(Cosmoteer.Ships.Parts.Part Part, float Dist, IntVector2 ClosestCell)> __result)
+        {
+            if (!ZtxPathSearchBoundsGuardPatch.OutsideGrid(__instance, searchOrigin)) return true;
+            __result = Array.Empty<(Cosmoteer.Ships.Parts.Part, float, IntVector2)>();
+            return false;
+        }
+    }
+
+    [HarmonyPatch(typeof(PathManager), nameof(PathManager.SearchCrewFrom),
+                  new[] { typeof(IntRect), typeof(bool), typeof(int) })]
+    internal static class ZtxPathSearchCrewBoundsGuardPatch
+    {
+        private static bool Prefix(PathManager __instance, IntRect searchOrigin,
+                                   ref IEnumerable<(Cosmoteer.Ships.Crew.ShipCrew crew, float Dist)> __result)
+        {
+            if (!ZtxPathSearchBoundsGuardPatch.OutsideGrid(__instance, searchOrigin)) return true;
+            __result = Array.Empty<(Cosmoteer.Ships.Crew.ShipCrew, float)>();
             return false;
         }
     }

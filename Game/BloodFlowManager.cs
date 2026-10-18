@@ -10,11 +10,27 @@ using ZTX.BioCirculation.Core;
 
 namespace ZTX.BioCirculation.Game
 {
-    // Drives blood movement for one ship.
     internal class BloodFlowManager : ShipComponent
     {
         private static readonly ConditionalWeakTable<Ship, BloodFlowManager> s_managers =
             new ConditionalWeakTable<Ship, BloodFlowManager>();
+
+        internal static BloodFlowManager Find(Ship ship)
+        {
+            return ship != null && s_managers.TryGetValue(ship, out BloodFlowManager m) ? m : null;
+        }
+
+        internal void TraceState(ref TraceHash h)
+        {
+            h.Add(_nodes.Count).Add(_topologyDirty).Add(_scaleCheckCounter).Add(_outputRefreshCounter);
+            for (int i = 0; i < _nodes.Count; i++)
+            {
+                ZtxFlowNode n = _nodes[i];
+                if (n?.Part == null) { h.Add(-1); continue; }
+                h.Add(n.Part.Location.X).Add(n.Part.Location.Y).Add(n.Rules.Network)
+                 .Add(n.Volume).Add(n.Pressure).Add(n.EffectivePMax).Add(n.EffectiveFlowRate);
+            }
+        }
 
         private readonly List<ZtxFlowNode> _nodes = new List<ZtxFlowNode>();
         private readonly Dictionary<ZtxFlowNode, int> _indexByNode = new Dictionary<ZtxFlowNode, int>();
@@ -28,7 +44,6 @@ namespace ZTX.BioCirculation.Game
         private int _movedThisWindow;
         private int _ticksWithMovement;
         private int _outputRefreshCounter;
-
 
         public BloodFlowManager()
         {
@@ -79,8 +94,6 @@ namespace ZTX.BioCirculation.Game
             }
         }
 
-        // =============== SYSTEM-FULLNESS GATES (2026-08-24) ===============
-        // Producer toggles driven by CONNECTED-SYSTEM blood fullness — see ZtxFlowGate.
         private readonly List<ZtxFlowGate> _gates = new List<ZtxFlowGate>();
 
         private int[] _systemLabels;
@@ -108,14 +121,10 @@ namespace ZTX.BioCirculation.Game
                 if (ra != rb) parent[ra] = rb;
             }
 
-            // Within-network adjacency: gradient edges AND pumps (a valve's edges are
-            // one-way but it is still the same system).
             foreach (KeyValuePair<int, List<int>> kv in _graph.Downstream)
                 for (int i = 0; i < kv.Value.Count; i++) Union(kv.Key, kv.Value[i]);
             foreach ((int from, int to) in _graph.Pumps) Union(from, to);
 
-            // Cross-network merge on SystemBridge parts: all pressure-model nodes of
-            // the part join one system.
             var byPart = new Dictionary<Part, List<int>>();
             bool bridged;
             foreach (KeyValuePair<ZtxFlowNode, int> kv in _indexByNode)
@@ -192,8 +201,6 @@ namespace ZTX.BioCirculation.Game
                 }
                 else
                 {
-                    // Ship-wide fallback when the gate's part has no pressure-model
-                    // node (should not happen for the marrow).
                     gVol = totalVol; gCap = totalCap;
                 }
                 fullness = gCap <= 0 ? 0f : (float)gVol / gCap;
@@ -214,7 +221,7 @@ namespace ZTX.BioCirculation.Game
         public override void FixedUpdate(FixedUpdater fixedUpdater, SceneRoot root)
         {
             if (!Config.Enabled) return;
-            if (_nodes.Count == 0) return;   // nothing to circulate on this ship
+            if (_nodes.Count == 0) return;
 
             if (_topologyDirty)
             {
@@ -265,7 +272,6 @@ namespace ZTX.BioCirculation.Game
         private void MeasureAndTick()
         {
             long flowStart = ZtxPerfProbe.Mark();
-            // Pull converter output (marrow / lung / distributor) into the model first.
             ShipGraphAdapter.ReadForward(_graph, _nodeByFlow);
 
             int n = _graph.Nodes.Count;
@@ -281,14 +287,12 @@ namespace ZTX.BioCirculation.Game
             for (int i = 0; i < n; i++)
             {
                 int d = _graph.Nodes[i].Volume - _beforeVolumes[i];
-                if (d > 0) moved += d;              // count arrivals only, so each unit counts once
+                if (d > 0) moved += d;
             }
             _movedThisWindow += moved;
             if (moved > 0) _ticksWithMovement++;
             ZtxPerfProbe.Section("blood flow math", flowStart);
 
-            // Timed apart from the maths: every storage write runs the engine's own reaction to
-            // it (fill sprites, toggles, network queries) synchronously, inside this call.
             long writeStart = ZtxPerfProbe.Mark();
             int written = ShipGraphAdapter.WriteBack(_graph, _nodeByFlow);
             ZtxPerfProbe.Section("blood write-back", writeStart);
@@ -304,8 +308,6 @@ namespace ZTX.BioCirculation.Game
                 BloodNode n = _graph.Nodes[i];
                 if (n.Volume > 0) filled++;
                 total += n.Volume;
-                // Blood sitting at zero pressure can never move: no gradient, no downhill
-                // neighbour. This is what a starved organ source looks like from the outside.
                 if (n.Volume > 0 && n.Pressure == 0) { stuck++; stuckUnits += n.Volume; }
                 if (n.Pressure > maxP) maxP = n.Pressure;
                 if (n.Pressure < minP) minP = n.Pressure;
@@ -315,7 +317,7 @@ namespace ZTX.BioCirculation.Game
 
             if (Config.VerboseLog)
             {
-                var byRole = new Dictionary<string, int[]>();   // role|network -> {nodes, units, withBlood}
+                var byRole = new Dictionary<string, int[]>();
                 foreach (KeyValuePair<ZtxFlowNode, BloodNode> kv in _nodeByFlow)
                 {
                     string key = kv.Key.Rules.Role + "/" + kv.Key.Rules.Network;
@@ -356,8 +358,6 @@ namespace ZTX.BioCirculation.Game
             _scaleSignature = ShipGraphAdapter.ScaleSignature(_nodes);
             RebuildSystemLabels();
 
-            // Everything below only reports; timed on its own because it writes a line per
-            // directional part on every rebuild.
             long logStart = ZtxPerfProbe.Mark();
             try
             {
@@ -394,8 +394,6 @@ namespace ZTX.BioCirculation.Game
                 Log.Verbose(sb.ToString());
             }
 
-            // Directional parts: what the model thinks each one is aimed at. Rotate a part,
-            // reload, and the line should change - the facing check when art is in doubt.
             if (Config.VerboseLog)
             {
                 foreach (KeyValuePair<ZtxFlowNode, int> kv in _indexByNode)

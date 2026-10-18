@@ -5,15 +5,9 @@ namespace ZTX.BioCirculation.Core
     public sealed class BloodGraph
     {
         public readonly List<BloodNode> Nodes = new();
-        // Directed adjacency: Downstream[a] = nodes blood may flow INTO from a.
         public readonly Dictionary<int, List<int>> Downstream = new();
-        // Sinks: low-pressure anchors (the network's drain side).
         public readonly HashSet<int> Sinks = new();
-        // Active valve pumps: each is (inputNeighbourId -> outputNeighbourId). A valve moves
-        // blood across itself against the gradient (input side low, output side high P_max).
         public readonly System.Collections.Generic.List<(int from, int to)> Pumps = new();
-        // The ids that are the SOURCE of a pump. FlowStep asks "does this node pump onward?"
-        // once per pump edge; scanning the pump list for that answer was O(pumps) per ask.
         public readonly HashSet<int> PumpSources = new();
 
         private readonly Dictionary<int, BloodNode> _byId = new();
@@ -56,7 +50,7 @@ namespace ZTX.BioCirculation.Core
             PumpSources.Add(from);
         }
 
-        public void Connect(int from, int to) // directed: blood may flow from->to
+        public void Connect(int from, int to)
         {
             if (!Downstream.ContainsKey(from)) Downstream[from] = new List<int>();
             Downstream[from].Add(to);

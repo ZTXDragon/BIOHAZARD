@@ -5,8 +5,6 @@ using Halfling.Serialization;
 
 namespace ZTX.BioCirculation.Game
 {
-    // Rules for ZtxBiomassIntake - how a part that burns biomass takes its share of the biomass
-    // network (2026-09-25).
     [ReflectiveSerialization(Explicit = true)]
     [ReflectivePortableHashing(Explicit = true)]
     [SerialDerivedType(TypeName = "ZtxBiomassIntake")]

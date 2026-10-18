@@ -1,6 +1,5 @@
 namespace ZTX.BioCirculation.Core
 {
-    // Whether a ship is "significant" - the engine's word for "a live ship rather than debris".
     public static class SignificanceRule
     {
         public static bool VanillaIsSignificant(bool? specialProvider, bool hasCommandParts,
@@ -12,11 +11,12 @@ namespace ZTX.BioCirculation.Core
         }
 
         public static bool IsSignificant(bool vanillaResult, bool hasSpecialProvider,
-                                         bool hasCommandParts, int crewOnShip, int crewCapacity)
+                                         bool hasCommandParts, int crewOnShip, int crewCapacity,
+                                         bool hasBioBrain)
         {
             if (vanillaResult) return true;
             if (hasSpecialProvider) return false;
-            bool crewless = crewOnShip == 0 && crewCapacity == 0;
+            bool crewless = crewOnShip == 0 && crewCapacity == 0 && hasBioBrain;
             return crewless && hasCommandParts;
         }
     }

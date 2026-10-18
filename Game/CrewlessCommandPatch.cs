@@ -5,7 +5,6 @@ using HarmonyLib;
 
 namespace ZTX.BioCirculation.Game
 {
-    // Opens CREW-GATED orders for crewless bio ships (2026-08-23).
     [HarmonyPatch(typeof(CommandManager), nameof(CommandManager.CanExecuteCrewCommandsFrom))]
     internal static class CrewlessCommandPatch
     {
@@ -20,7 +19,6 @@ namespace ZTX.BioCirculation.Game
         }
     }
 
-    // Second gate on the same feature: the salvage/collect BUTTON.
     [HarmonyPatch(typeof(ShipsCard), "UpdateCommandButtons")]
     internal static class CrewlessSalvageButtonPatch
     {

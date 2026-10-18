@@ -13,7 +13,6 @@ using ZTX.BioCirculation.Core;
 
 namespace ZTX.BioCirculation.Game
 {
-    // Performance probe (2026-09-25).
     internal static class ZtxPerfProbe
     {
         private static readonly object s_lock = new object();
@@ -106,8 +105,6 @@ namespace ZTX.BioCirculation.Game
             }
         }
 
-        // ---------------------------------------------------------------- per-object timing
-
         private static IEnumerable<CodeInstruction> TickLoopTranspiler(IEnumerable<CodeInstruction> code) =>
             Rewire(code, AccessTools.Method(typeof(IFixedUpdateableSceneObject), nameof(IFixedUpdateableSceneObject.FixedUpdate)),
                    AccessTools.Method(typeof(ZtxPerfProbe), nameof(TimedFixedUpdate)), out s_tickLoopHits);
@@ -159,8 +156,6 @@ namespace ZTX.BioCirculation.Game
             long elapsed = Stopwatch.GetTimestamp() - t0;
             lock (s_lock) s_drawObjects.Add(obj.GetType(), elapsed);
         }
-
-        // ---------------------------------------------------------------- totals
 
         private static void StartPrefix(out long __state) => __state = Stopwatch.GetTimestamp();
 
@@ -214,15 +209,12 @@ namespace ZTX.BioCirculation.Game
                 }
                 catch (Exception ex)
                 {
-                    // One report failing must not spam a line every frame after it.
                     s_enabled = false;
                     Log.Exception("ZtxPerfProbe.Report (probe now off)", ex);
                 }
                 ResetWindow(now);
             }
         }
-
-        // ---------------------------------------------------------------- report
 
         private static void Report(long now)
         {

@@ -8,7 +8,6 @@ using Halfling.Serialization;
 
 namespace ZTX.BioCirculation.Game
 {
-    // Rules for ZtxFlowNode — the mod's own blood-movement component.
     [ReflectiveSerialization(Explicit = true)]
     [ReflectivePortableHashing(Explicit = true)]
     [SerialDerivedType(TypeName = "ZtxFlowNode")]
@@ -97,6 +96,14 @@ namespace ZTX.BioCirculation.Game
         [Serialize(Optional = true)]
         [PortableHash]
         public ID<PartComponentRules> Toggle;
+
+        [Serialize(Optional = true)]
+        [PortableHash]
+        public ID<PartComponentRules> PressureToggle;
+
+        [Serialize(Optional = true)]
+        [PortableHash]
+        public ID<PartComponentRules> FlowToggle;
 
         public override PartComponent CreateComponent()
         {

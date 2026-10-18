@@ -6,8 +6,6 @@ using Cosmoteer.Ships.Parts.Resources;
 
 namespace ZTX.BioCirculation.Game
 {
-    // One biomass consumer's claim on its network: the network output it reads, the tank it fills,
-    // and how much it may take per cycle.
     internal class ZtxBiomassIntake : PartComponent
     {
         private IResourceStorage _source;
@@ -67,8 +65,6 @@ namespace ZTX.BioCirculation.Game
         {
             base.OnPartAttached();
 
-            // TryGetComponent, never GetComponent: the latter throws on a missing or wrong-typed
-            // component, and a rules typo should be a log line rather than a crash at part spawn.
             base.Part.TryGetComponent<IResourceStorage>(Rules.Source, out _source);
             if (_source == null)
                 Log.Error("BiomassIntake on " + base.Part + " declares Source=" + Rules.Source +

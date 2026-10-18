@@ -5,7 +5,6 @@ using Cosmoteer.Ships.Parts.Logic;
 
 namespace ZTX.BioCirculation.Game
 {
-    // The live system-fullness toggle.
     internal class ZtxFlowGate : PartComponent, IPartComponentToggle, IComponentToggleProvider
     {
         private BloodFlowManager _manager;

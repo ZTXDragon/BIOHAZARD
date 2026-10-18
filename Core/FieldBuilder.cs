@@ -29,23 +29,39 @@ namespace ZTX.BioCirculation.Core
 
         private static void PaintFrom(BloodGraph g, BloodNode source)
         {
-            var dist = new Dictionary<int, int> { [source.Id] = 0 };
-            var pq = new SortedSet<(int d, int id)> { (0, source.Id) };
+            foreach (var kv in ReachOf(g, source.Id))
+            {
+                var node = g.NodeById(kv.Key);
+                if (node != null && kv.Value > node.Pressure) node.Pressure = kv.Value;
+            }
+        }
+
+        public static Dictionary<int, int> ReachOf(BloodGraph g, int sourceId)
+        {
+            var result = new Dictionary<int, int>();
+            var source = g.NodeById(sourceId);
+            if (source == null || !source.IsResetPoint || source.PMax <= 0) return result;
+            if (!source.PropagatePressure)
+            {
+                result[sourceId] = source.PMax;
+                return result;
+            }
+            var dist = new Dictionary<int, int> { [sourceId] = 0 };
+            var pq = new SortedSet<(int d, int id)> { (0, sourceId) };
             while (pq.Count > 0)
             {
                 var cur = pq.Min; pq.Remove(cur);
                 int d = cur.d, id = cur.id;
-                if (d > dist[id]) continue;          // stale entry
+                if (d > dist[id]) continue;
                 int contribution = source.PMax - d;
-                if (contribution <= 0) continue;     // beyond reach: prune
-                var node = g.NodeById(id);
-                if (contribution > node.Pressure) node.Pressure = contribution;
+                if (contribution <= 0) continue;
+                if (!result.TryGetValue(id, out int had) || contribution > had) result[id] = contribution;
                 if (!g.Downstream.TryGetValue(id, out var outs)) continue;
                 foreach (var nbId in outs)
                 {
                     var nb = g.NodeById(nbId);
                     if (nb == null) continue;
-                    int nd = d + nb.Decay;           // cost to ENTER nb
+                    int nd = d + nb.Decay;
                     if (!dist.TryGetValue(nbId, out var old) || nd < old)
                     {
                         dist[nbId] = nd;
@@ -53,6 +69,13 @@ namespace ZTX.BioCirculation.Core
                     }
                 }
             }
+            return result;
+        }
+
+        public static int ReachPipes(int pmax, int decay)
+        {
+            if (pmax <= 0 || decay <= 0) return 0;
+            return (pmax - 1) / decay;
         }
     }
 }
